@@ -7,6 +7,7 @@ from datetime import timedelta
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import LivoltekApi, LivoltekApiError
@@ -30,14 +31,18 @@ from .const import (
     ENERGY_REPORT_INTERVAL,
     GROUP_ALARMS,
     GROUP_DAILY_ENERGY,
+    GROUP_DEVICE_BASIC,
     GROUP_DEVICE_DETAILS,
     GROUP_DEVICE_ELECTRICITY,
     GROUP_OVERVIEW,
     GROUP_POWER_FLOW,
     GROUP_REALTIME,
     GROUP_SITE_DETAILS,
+    GROUP_SITE_INSTALLER,
+    GROUP_SITE_OWNER,
     GROUP_SOCIAL,
     GROUP_STORAGE,
+    MIN_UPDATE_INTERVAL,
     SERVERS,
 )
 
@@ -73,8 +78,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     update_interval = int(
         entry.options.get(CONF_UPDATE_INTERVAL, entry.data.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL))
     )
-    if update_interval < 1:
-        update_interval = 1
+    if update_interval < MIN_UPDATE_INTERVAL:
+        update_interval = MIN_UPDATE_INTERVAL
 
     # Throttle state for daily energy report (max 1x/hour)
     energy_state: dict = {"last_fetch": 0.0, "cached": {}}
@@ -188,6 +193,49 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             else:
                 result["daily_energy"] = {}
 
+            # ── Site installer ───────────────────────────────────────
+            if GROUP_SITE_INSTALLER in enabled_groups:
+                try:
+                    raw_inst = await api.get_site_installer(site_id)
+                    if isinstance(raw_inst, list):
+                        result["site_installer"] = raw_inst[0] if raw_inst else {}
+                    else:
+                        result["site_installer"] = raw_inst or {}
+                except LivoltekApiError:
+                    _LOGGER.debug("Site installer not available for site %s", site_id)
+                    result["site_installer"] = {}
+            else:
+                result["site_installer"] = {}
+
+            # ── Site owner ───────────────────────────────────────────
+            if GROUP_SITE_OWNER in enabled_groups:
+                try:
+                    raw_owner = await api.get_site_owner(site_id)
+                    if isinstance(raw_owner, list):
+                        result["site_owner"] = raw_owner[0] if raw_owner else {}
+                    else:
+                        result["site_owner"] = raw_owner or {}
+                except LivoltekApiError:
+                    _LOGGER.debug("Site owner not available for site %s", site_id)
+                    result["site_owner"] = {}
+            else:
+                result["site_owner"] = {}
+
+            # ── Device basic data ────────────────────────────────────
+            if GROUP_DEVICE_BASIC in enabled_groups:
+                try:
+                    raw_basic = await api.get_device_basic_data(device_sn)
+                    # API may return a list; extract first element
+                    if isinstance(raw_basic, list):
+                        result["device_basic"] = raw_basic[0] if raw_basic else {}
+                    else:
+                        result["device_basic"] = raw_basic or {}
+                except LivoltekApiError:
+                    _LOGGER.debug("Device basic data not available for %s", device_sn)
+                    result["device_basic"] = {}
+            else:
+                result["device_basic"] = {}
+
             # ── Device description (BESS capabilities) ───────────────
             device_description = None
             if has_control:
@@ -232,6 +280,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
 
     await hass.config_entries.async_forward_entry_setups(entry, platforms)
+
+    # Clean up devices for disabled groups (or leftover single-device from old version)
+    _cleanup_orphan_devices(hass, entry)
 
     # Register services (once per domain)
     if not hass.services.has_service(DOMAIN, "set_work_mode_schedule"):
@@ -349,10 +400,41 @@ async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> Non
     new_interval = int(
         entry.options.get(CONF_UPDATE_INTERVAL, entry.data.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL))
     )
-    if new_interval < 1:
-        new_interval = 1
+    if new_interval < MIN_UPDATE_INTERVAL:
+        new_interval = MIN_UPDATE_INTERVAL
     coordinator.update_interval = timedelta(minutes=new_interval)
+
+    # Clean up devices for groups that are no longer enabled
+    _cleanup_orphan_devices(hass, entry)
+
     await coordinator.async_request_refresh()
+
+
+def _cleanup_orphan_devices(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove devices whose group is no longer in enabled_groups."""
+    enabled_groups = set(entry.data.get(CONF_ENABLED_GROUPS, ALL_GROUPS))
+    site_id = entry.data.get(CONF_SITE_ID, "")
+    device_sn = entry.data.get(CONF_DEVICE_SN, "")
+
+    dev_reg = dr.async_get(hass)
+    for device in dr.async_entries_for_config_entry(dev_reg, entry.entry_id):
+        for domain, identifier in device.identifiers:
+            if domain != DOMAIN:
+                continue
+            # Identifier format: "{site_id}_{device_sn}_{group}"
+            prefix = f"{site_id}_{device_sn}_"
+            if identifier.startswith(prefix):
+                group = identifier[len(prefix):]
+                if group and group not in enabled_groups:
+                    _LOGGER.info("Removing orphan device %s (group %s)", device.name, group)
+                    dev_reg.async_remove_device(device.id)
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant, entry: ConfigEntry, device_entry: dr.DeviceEntry
+) -> bool:
+    """Allow removal of a device from the integration."""
+    return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

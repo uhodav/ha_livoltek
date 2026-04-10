@@ -29,6 +29,7 @@ from .const import (
     DOMAIN,
     GROUP_LABELS,
     GROUP_LABELS_UK,
+    MIN_UPDATE_INTERVAL,
     SERVER_EUROPEAN,
     SERVER_INTERNATIONAL,
     SERVERS,
@@ -341,61 +342,105 @@ class LivoltekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class LivoltekOptionsFlow(config_entries.OptionsFlow):
-    """Handle options flow for Livoltek."""
+    """Handle options flow for Livoltek — multi-step with pre-filled values."""
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         self._config_entry = config_entry
+        self._new_data: dict[str, Any] = {}
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
-        """Manage the options."""
+        """Step 1/3: API credentials (pre-filled)."""
+        errors: dict[str, str] = {}
+        cur = self._config_entry.data
+
         if user_input is not None:
-            new_data = dict(self._config_entry.data)
-            need_reauth = False
+            server_type = user_input[CONF_SERVER_TYPE]
+            secuid = user_input[CONF_SECUID].strip()
+            key = user_input[CONF_KEY].strip()
+            token = user_input[CONF_TOKEN].strip()
 
-            # Update KEY if provided
-            new_key = user_input.pop(CONF_KEY, "").strip()
-            if new_key and new_key != new_data.get(CONF_KEY):
-                new_data[CONF_KEY] = new_key
-                need_reauth = True
+            # Validate credentials by attempting login
+            base_url = SERVERS[server_type]
+            api = LivoltekApi(base_url, secuid, key, token)
+            try:
+                auth_token = await api.login()
+                self._new_data = {
+                    **dict(cur),
+                    CONF_SERVER_TYPE: server_type,
+                    CONF_SECUID: secuid,
+                    CONF_KEY: key,
+                    CONF_TOKEN: token,
+                    CONF_AUTH_TOKEN: auth_token,
+                }
+                return await self.async_step_groups()
+            except LivoltekAuthError:
+                errors["base"] = "invalid_auth"
+            except LivoltekApiError:
+                errors["base"] = "cannot_connect"
+            except Exception:
+                _LOGGER.exception("Unexpected error during options login")
+                errors["base"] = "unknown"
+            finally:
+                await api.close()
 
-            # Update TOKEN if provided
-            new_token = user_input.pop(CONF_TOKEN, "").strip()
-            if new_token and new_token != new_data.get(CONF_TOKEN):
-                new_data[CONF_TOKEN] = new_token
-                need_reauth = True
+        server_options = [
+            selector.SelectOptionDict(value=SERVER_INTERNATIONAL, label="International server"),
+            selector.SelectOptionDict(value=SERVER_EUROPEAN, label="European server"),
+        ]
 
-            # Update ACCOUNT if provided
-            new_account = user_input.pop(CONF_ACCOUNT, "").strip()
-            if new_account:
-                new_data[CONF_ACCOUNT] = new_account
-
-            # Update PASSWORD if provided (store as MD5)
-            new_password = user_input.pop(CONF_PASSWORD, "").strip()
-            if new_password:
-                new_data[CONF_PASSWORD] = hashlib.md5(
-                    new_password.encode()
-                ).hexdigest()
-
-            # Update enabled groups
-            new_groups = user_input.pop(CONF_ENABLED_GROUPS, None)
-            if new_groups is not None:
-                new_data[CONF_ENABLED_GROUPS] = new_groups
-
-            # Force re-login on next reload if credentials changed
-            if need_reauth:
-                new_data[CONF_AUTH_TOKEN] = ""
-
-            self.hass.config_entries.async_update_entry(
-                self._config_entry, data=new_data
-            )
-
-            return self.async_create_entry(title="", data=user_input)
-
-        current_interval = self._config_entry.options.get(
-            CONF_UPDATE_INTERVAL,
-            self._config_entry.data.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL),
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_SERVER_TYPE,
+                        default=cur.get(CONF_SERVER_TYPE, SERVER_EUROPEAN),
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=server_options,
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
+                    vol.Required(
+                        CONF_SECUID,
+                        default=cur.get(CONF_SECUID, ""),
+                    ): str,
+                    vol.Required(
+                        CONF_KEY,
+                        default=cur.get(CONF_KEY, ""),
+                    ): str,
+                    vol.Required(
+                        CONF_TOKEN,
+                        default=cur.get(CONF_TOKEN, ""),
+                    ): selector.TextSelector(
+                        selector.TextSelectorConfig(
+                            type=selector.TextSelectorType.PASSWORD
+                        )
+                    ),
+                }
+            ),
+            errors=errors,
         )
-        current_groups = self._config_entry.data.get(CONF_ENABLED_GROUPS, ALL_GROUPS)
+
+    async def async_step_groups(self, user_input: dict[str, Any] | None = None):
+        """Step 2/3: Update interval and data groups."""
+        errors: dict[str, str] = {}
+        cur = self._config_entry.data
+
+        if user_input is not None:
+            selected = user_input.get(CONF_ENABLED_GROUPS, [])
+            if not selected:
+                errors["base"] = "no_groups_selected"
+            else:
+                interval = user_input.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)
+                if interval < MIN_UPDATE_INTERVAL:
+                    interval = MIN_UPDATE_INTERVAL
+                self._new_data[CONF_UPDATE_INTERVAL] = interval
+                self._new_data[CONF_ENABLED_GROUPS] = selected
+                return await self.async_step_control()
+
+        current_interval = cur.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)
+        current_groups = cur.get(CONF_ENABLED_GROUPS, ALL_GROUPS)
 
         labels = _get_group_labels(self.hass)
         group_options = [
@@ -404,13 +449,13 @@ class LivoltekOptionsFlow(config_entries.OptionsFlow):
         ]
 
         return self.async_show_form(
-            step_id="init",
+            step_id="groups",
             data_schema=vol.Schema(
                 {
-                    vol.Optional(
+                    vol.Required(
                         CONF_UPDATE_INTERVAL, default=current_interval
-                    ): vol.All(vol.Coerce(int), vol.Range(min=1, max=60)),
-                    vol.Optional(
+                    ): vol.All(vol.Coerce(int), vol.Range(min=MIN_UPDATE_INTERVAL, max=60)),
+                    vol.Required(
                         CONF_ENABLED_GROUPS, default=list(current_groups)
                     ): selector.SelectSelector(
                         selector.SelectSelectorConfig(
@@ -419,17 +464,43 @@ class LivoltekOptionsFlow(config_entries.OptionsFlow):
                             multiple=True,
                         )
                     ),
-                    vol.Optional(
-                        CONF_KEY,
-                        description={"suggested_value": self._config_entry.data.get(CONF_KEY, "")},
-                    ): str,
-                    vol.Optional(
-                        CONF_TOKEN,
-                        description={"suggested_value": self._config_entry.data.get(CONF_TOKEN, "")},
-                    ): str,
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_control(self, user_input: dict[str, Any] | None = None):
+        """Step 3/3: BESS control credentials (optional)."""
+        cur = self._config_entry.data
+
+        if user_input is not None:
+            account = user_input.get(CONF_ACCOUNT, "").strip()
+            password = user_input.get(CONF_PASSWORD, "").strip()
+
+            if account:
+                self._new_data[CONF_ACCOUNT] = account
+            if password:
+                self._new_data[CONF_PASSWORD] = hashlib.md5(
+                    password.encode()
+                ).hexdigest()
+
+            # Save all changes to entry.data and reload
+            self.hass.config_entries.async_update_entry(
+                self._config_entry, data=self._new_data
+            )
+
+            # Reload the entire integration to apply changes
+            await self.hass.config_entries.async_reload(self._config_entry.entry_id)
+
+            return self.async_create_entry(title="", data={})
+
+        return self.async_show_form(
+            step_id="control",
+            data_schema=vol.Schema(
+                {
                     vol.Optional(
                         CONF_ACCOUNT,
-                        description={"suggested_value": self._config_entry.data.get(CONF_ACCOUNT, "")},
+                        description={"suggested_value": cur.get(CONF_ACCOUNT, "")},
                     ): str,
                     vol.Optional(CONF_PASSWORD): selector.TextSelector(
                         selector.TextSelectorConfig(

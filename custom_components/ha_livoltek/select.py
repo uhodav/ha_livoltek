@@ -15,6 +15,9 @@ from .const import (
     CONF_SITE_NAME,
     CONF_WORKMODE,
     DOMAIN,
+    GROUP_DEVICE_DETAILS,
+    GROUP_LABELS,
+    GROUP_LABELS_UK,
     WORK_MODE_MAP,
 )
 
@@ -38,11 +41,10 @@ def _parse_supported_modes(coordinator_data: dict) -> list[dict]:
     return []
 
 
-def _build_device_info(entry_data: dict, coordinator_data: dict | None = None) -> dict:
-    """Build device info dict."""
+def _build_device_info(entry_data: dict, coordinator_data: dict | None = None, hass=None) -> dict:
+    """Build device info dict for the device_details group."""
     site_id = entry_data.get(CONF_SITE_ID, "")
     device_sn = entry_data.get(CONF_DEVICE_SN, "")
-    site_name = entry_data.get(CONF_SITE_NAME, "Livoltek")
     device_model = entry_data.get(CONF_DEVICE_MODEL, "inverter")
     product_type = entry_data.get("product_type", "")
 
@@ -51,9 +53,14 @@ def _build_device_info(entry_data: dict, coordinator_data: dict | None = None) -
         device_details = coordinator_data.get("device_details") or {}
         sw_version = device_details.get("firmwareVersion")
 
+    group = GROUP_DEVICE_DETAILS
+    lang = getattr(hass.config, "language", "en") if hass else "en"
+    labels = GROUP_LABELS_UK if lang and lang.startswith("uk") else GROUP_LABELS
+    group_label = labels.get(group, group)
+
     return {
-        "identifiers": {(DOMAIN, f"{site_id}_{device_sn}")},
-        "name": f"{site_name} ({device_sn})",
+        "identifiers": {(DOMAIN, f"{site_id}_{device_sn}_{group}")},
+        "name": f"{device_sn} ({group_label})",
         "manufacturer": "LIVOLTEK",
         "model": product_type or device_model,
         "sw_version": sw_version,
@@ -103,7 +110,7 @@ class LivoltekWorkModeSelect(CoordinatorEntity, SelectEntity):
 
     @property
     def device_info(self):
-        return _build_device_info(self._entry_data, self.coordinator.data)
+        return _build_device_info(self._entry_data, self.coordinator.data, hass=self._hass)
 
     @property
     def options(self) -> list[str]:

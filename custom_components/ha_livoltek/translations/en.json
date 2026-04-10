@@ -58,15 +58,29 @@
   "options": {
     "step": {
       "init": {
-        "title": "Livoltek Options",
-        "description": "Configure integration options.",
+        "title": "Step 1/3: API Credentials",
+        "description": "Verify or update your Livoltek API credentials.",
+        "data": {
+          "server_type": "Server",
+          "secuid": "Security ID (secuid)",
+          "key": "API Key",
+          "token": "User Token"
+        }
+      },
+      "groups": {
+        "title": "Step 2/3: Update Interval & Data Sources",
+        "description": "Set polling interval and choose data groups.",
         "data": {
           "update_interval": "Update interval (minutes)",
-          "enabled_groups": "Enabled data groups",
-          "key": "API Key (leave blank to keep current)",
-          "token": "User Token (leave blank to keep current)",
-          "account": "Account for BESS control (leave blank to keep current)",
-          "password": "New password for BESS control (leave blank to keep current)"
+          "enabled_groups": "Enabled data groups"
+        }
+      },
+      "control": {
+        "title": "Step 3/3: BESS Control (optional)",
+        "description": "Update account and password for inverter control. Leave blank to keep current.",
+        "data": {
+          "account": "Account for BESS control",
+          "password": "New password for BESS control"
         }
       }
     }
@@ -444,6 +458,74 @@
       "daily_eps_output": {
         "name": "Daily EPS Output",
         "description": "Total emergency power supply output energy today"
+      },
+      "daily_diesel_energy": {
+        "name": "Daily Diesel Generation",
+        "description": "Total diesel generator energy output today"
+      },
+      "daily_ev_consumption": {
+        "name": "Daily EV Consumption",
+        "description": "Total EV charging pile energy consumption today"
+      },
+      "installer_name": {
+        "name": "Installer Name",
+        "description": "Name of the site installer company"
+      },
+      "installer_org_code": {
+        "name": "Installer Org Code",
+        "description": "Organization code of the site installer"
+      },
+      "owner_name": {
+        "name": "Owner Name",
+        "description": "Name of the site owner"
+      },
+      "owner_email": {
+        "name": "Owner Email",
+        "description": "Email address of the site owner"
+      },
+      "owner_login_account": {
+        "name": "Owner Account",
+        "description": "Login account of the site owner"
+      },
+      "owner_country": {
+        "name": "Owner Country",
+        "description": "Country of the site owner"
+      },
+      "device_communication_status": {
+        "name": "Communication Status",
+        "description": "Device communication status (Online/Offline)"
+      },
+      "device_running_status_basic": {
+        "name": "Running Status (Basic)",
+        "description": "Running status from device basic data"
+      },
+      "device_registration_time": {
+        "name": "Registration Time",
+        "description": "Device registration time on the platform"
+      },
+      "device_power_gen_day": {
+        "name": "Daily Power Generation",
+        "description": "Device power generation today"
+      },
+      "device_grid_export_day": {
+        "name": "Daily Grid Export (Device)",
+        "description": "Energy exported to the grid by this device today"
+      },
+      "device_grid_import_day": {
+        "name": "Daily Grid Import (Device)",
+        "description": "Energy imported from the grid by this device today"
+      },
+      "device_charge_day": {
+        "name": "Daily Charge (Device)",
+        "description": "Battery charge energy by this device today"
+      },
+      "device_discharge_day": {
+        "name": "Daily Discharge (Device)",
+        "description": "Battery discharge energy by this device today"
+      },
+      "device_load_day": {
+        "name": "Daily Load (Device)",
+        "description": "Load energy by this device today"
       }
     },
     "button": {

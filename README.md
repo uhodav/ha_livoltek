@@ -14,8 +14,10 @@ Custom Home Assistant integration for Livoltek inverters and BESS via Livoltek c
   3. Device selection + update interval
   4. Data group selection (choose endpoint groups to enable)
   5. Optional BESS control credentials (`account`, `password`)
-- Selective data collection by endpoint groups (10 groups)
-- **93 sensors** total (measurements + diagnostics)
+- Selective data collection by endpoint groups (13 groups)
+- **110 sensors** total (measurements + diagnostics)
+- Human-readable enum values for statuses (PV, Grid, Load, Battery, Charging Pile, Running Status, Alarm Type, Battery Type)
+- API rate limit enforcement (min 5 min interval, energy reports 1x/hour)
 - BESS control entities:
   - 5 buttons (start/stop/restart/BMS restart/emergency charging)
   - 1 work mode select entity
@@ -44,13 +46,12 @@ Custom Home Assistant integration for Livoltek inverters and BESS via Livoltek c
 - `account` (optional) — account for BESS control
 - `password` (optional) — password for BESS control (stored as MD5)
 
-#### Options (after setup)
-- `update_interval`
-- `enabled_groups`
-- `key` (replace current)
-- `token` (replace current)
-- `account` (replace current)
-- `password` (replace current, stored as MD5)
+#### Options (after setup) — 3-step wizard with pre-filled values
+1. **API Credentials**: `server_type`, `secuid`, `key`, `token` — validates login on save
+2. **Interval & Groups**: `update_interval` (min 5 min), `enabled_groups`
+3. **BESS Control**: `account`, `password` (optional)
+
+After saving, the integration fully reloads with fresh credentials.
 
 ### How to get SECUID / KEY / TOKEN
 1. Go to: https://www.livoltek-portal.com/
@@ -92,12 +93,23 @@ You can enable/disable data groups during setup and in options.
    MPPT channels (PV1..PV12 voltage/current), AC phases, grid power/frequency, battery, EPS, timestamp.
 
 10. **Daily Energy Report** (`daily_energy`)  
-    Daily PV yield, load consumption, grid import/export, battery charge/discharge, EPS output.
+    Daily PV yield, load consumption, grid import/export, battery charge/discharge, EPS output, diesel generation, EV consumption.
+
+11. **Site Installer** (`site_installer`)  
+    Installer company name, organization code.
+
+12. **Site Owner** (`site_owner`)  
+    Owner name, email, login account, country.
+
+13. **Device Basic Data** (`device_basic`)  
+    Communication status, running status, registration time, daily power generation/grid export/import/charge/discharge/load.
 
 ### Sensor summary
-- Total sensors: **93**
+- Total sensors: **110**
+- Each data group is a **separate HA device** (e.g. `HPXXXXXHYYMMNNN (⚡ Power Flow)`)
 - Includes measurement and diagnostic entities
 - Every sensor has `data_group` attribute showing its source group
+- Disabling a group in options automatically removes its device
 
 ### Control entities
 #### Buttons (BESS control)
@@ -151,8 +163,10 @@ data:
   3. Вибір пристрою + інтервал оновлення
   4. Вибір груп даних (endpoint groups)
   5. Опційні дані для керування BESS (`account`, `password`)
-- Вибіркове отримання даних по 10 групах
-- **93 сенсори** (основні + діагностичні)
+- Вибіркове отримання даних по 13 групах
+- **110 сенсорів** (основні + діагностичні)
+- Читабельні значення статусів (PV, мережа, навантаження, батарея, EV, статус роботи, тип тривоги, тип батареї)
+- Дотримання лімітів API (мін. 5 хв інтервал, звіти енергії 1 раз/годину)
 - Сутності керування BESS:
   - 5 кнопок (start/stop/restart/BMS restart/emergency charging)
   - 1 select-сутність режиму роботи
@@ -181,13 +195,12 @@ data:
 - `account` (опційно) — обліковий запис для BESS-керування
 - `password` (опційно) — пароль для BESS-керування (зберігається як MD5)
 
-#### Опції (після додавання)
-- `update_interval`
-- `enabled_groups`
-- `key` (замінити поточний)
-- `token` (замінити поточний)
-- `account` (замінити поточний)
-- `password` (замінити поточний, зберігається як MD5)
+#### Опції (після додавання) — 3-кроковий майстер із передзаповненими значеннями
+1. **API-дані**: `server_type`, `secuid`, `key`, `token` — перевірка логіну при збереженні
+2. **Інтервал і групи**: `update_interval` (мін. 5 хв), `enabled_groups`
+3. **BESS-керування**: `account`, `password` (опційно)
+
+Після збереження інтеграція повністю перезавантажується з оновленими обліковими даними.
 
 ### Як отримати SECUID / KEY / TOKEN
 1. Перейдіть на: https://www.livoltek-portal.com/
@@ -229,12 +242,23 @@ data:
    Канали MPPT (PV1..PV12 напруга/струм), AC-фази, потужність/частота мережі, батарея, EPS, timestamp.
 
 10. **Daily Energy Report** (`daily_energy`)  
-    Добові значення генерації/споживання, імпорт/експорт мережі, заряд/розряд батареї, вихід EPS.
+    Добові значення генерації/споживання, імпорт/експорт мережі, заряд/розряд батареї, вихід EPS, дизельна генерація, споживання EV.
+
+11. **Site Installer** (`site_installer`)  
+    Назва компанії-інсталятора, код організації.
+
+12. **Site Owner** (`site_owner`)  
+    Ім'я власника, email, акаунт, країна.
+
+13. **Device Basic Data** (`device_basic`)  
+    Статус зв'язку, статус роботи, час реєстрації, добова генерація/експорт/імпорт/заряд/розряд/навантаження.
 
 ### Підсумок по сенсорах
-- Усього сенсорів: **93**
+- Усього сенсорів: **110**
+- Кожна група даних — **окремий пристрій HA** (наприклад, `HPXXXXXHYYMMNNN (⚡ Потоки енергії)`)
 - Є вимірювальні та діагностичні сутності
 - Кожен сенсор має атрибут `data_group` з назвою групи-джерела
+- Вимкнення групи в налаштуваннях автоматично видаляє її пристрій
 
 ### Сутності керування
 #### Кнопки (BESS control)

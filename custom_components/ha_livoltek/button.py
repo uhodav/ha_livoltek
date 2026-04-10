@@ -13,6 +13,9 @@ from .const import (
     CONF_SITE_NAME,
     CONTROL_TYPE_MAP,
     DOMAIN,
+    GROUP_DEVICE_DETAILS,
+    GROUP_LABELS,
+    GROUP_LABELS_UK,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -27,11 +30,10 @@ BUTTON_DEFINITIONS = [
 ]
 
 
-def _build_device_info(entry_data: dict, coordinator_data: dict | None = None) -> dict:
-    """Build device info dict."""
+def _build_device_info(entry_data: dict, coordinator_data: dict | None = None, hass=None) -> dict:
+    """Build device info dict for the device_details group."""
     site_id = entry_data.get(CONF_SITE_ID, "")
     device_sn = entry_data.get(CONF_DEVICE_SN, "")
-    site_name = entry_data.get(CONF_SITE_NAME, "Livoltek")
     device_model = entry_data.get(CONF_DEVICE_MODEL, "inverter")
     product_type = entry_data.get("product_type", "")
 
@@ -40,9 +42,14 @@ def _build_device_info(entry_data: dict, coordinator_data: dict | None = None) -
         device_details = coordinator_data.get("device_details") or {}
         sw_version = device_details.get("firmwareVersion")
 
+    group = GROUP_DEVICE_DETAILS
+    lang = getattr(hass.config, "language", "en") if hass else "en"
+    labels = GROUP_LABELS_UK if lang and lang.startswith("uk") else GROUP_LABELS
+    group_label = labels.get(group, group)
+
     return {
-        "identifiers": {(DOMAIN, f"{site_id}_{device_sn}")},
-        "name": f"{site_name} ({device_sn})",
+        "identifiers": {(DOMAIN, f"{site_id}_{device_sn}_{group}")},
+        "name": f"{device_sn} ({group_label})",
         "manufacturer": "LIVOLTEK",
         "model": product_type or device_model,
         "sw_version": sw_version,
@@ -69,6 +76,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
                 button_key=key,
                 control_type=control_type,
                 icon=icon,
+                hass=hass,
             )
         )
 
@@ -86,12 +94,14 @@ class LivoltekControlButton(ButtonEntity):
         button_key: str,
         control_type: int,
         icon: str,
+        hass=None,
     ) -> None:
         self._coordinator = coordinator
         self._api = api
         self._entry_data = entry_data
         self._button_key = button_key
         self._control_type = control_type
+        self._hass_ref = hass
 
         site_id = entry_data.get(CONF_SITE_ID, "")
         device_sn = entry_data.get(CONF_DEVICE_SN, "")
@@ -105,7 +115,7 @@ class LivoltekControlButton(ButtonEntity):
 
     @property
     def device_info(self):
-        return _build_device_info(self._entry_data, self._coordinator.data)
+        return _build_device_info(self._entry_data, self._coordinator.data, hass=self._hass_ref or self.hass)
 
     async def async_press(self) -> None:
         """Handle the button press."""

@@ -274,7 +274,7 @@ class LivoltekApi:
         for metric in (
             "pvYield", "loadConsumption", "energyImportFromGrid",
             "energyExportToGrid", "dischargeCapacity", "chargingCapacity",
-            "epsOutputenergy", "dgtotalEnergy",
+            "epsOutputenergy", "dgtotalEnergy", "evConsumption",
         ):
             entries = data.get(metric)
             if not entries or not isinstance(entries, list):
@@ -347,4 +347,20 @@ class LivoltekApi:
             "POST",
             "/hess/api/cmc/device/workModeSet",
             json_body=body,
+        )
+
+    # ── New endpoints from API v1.4.6 documentation ──────────────────
+
+    async def get_site_installer(self, site_id: str) -> dict:
+        """Get site installer information."""
+        return await self._request("GET", f"/hess/api/site/{site_id}/siteInstaller")
+
+    async def get_site_owner(self, site_id: str) -> dict:
+        """Get site owner (end user) information."""
+        return await self._request("GET", f"/hess/api/site/{site_id}/customer")
+
+    async def get_device_basic_data(self, sn: str) -> dict:
+        """Get device basic data (registration, daily counters, status)."""
+        return await self._request(
+            "GET", "/hess/api/device/basicData", params={"sn": sn}
         )

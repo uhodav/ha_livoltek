@@ -1,4 +1,4 @@
-﻿"""Sensor platform for Livoltek integration."""
+"""Sensor platform for Livoltek integration."""
 import json
 import logging
 from datetime import datetime, timezone
@@ -21,12 +21,21 @@ from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
+    ALARM_TYPE_MAP,
+    BATTERY_TYPE_MAP,
+    CHARGING_PILE_STATUS_MAP,
     CONF_DEVICE_MODEL,
     CONF_DEVICE_SN,
     CONF_SITE_ID,
     CONF_SITE_NAME,
     CONF_WORKMODE,
     DOMAIN,
+    ENERGY_STATUS_MAP,
+    GRID_STATUS_MAP,
+    GROUP_LABELS,
+    GROUP_LABELS_UK,
+    LOAD_STATUS_MAP,
+    PV_STATUS_MAP,
     RUNNING_STATUS_MAP,
     SITE_STATUS_MAP,
     SITE_TYPE_MAP,
@@ -67,11 +76,24 @@ def _get_last_alarm_field(alarms_data: dict, field: str):
     return records[0].get(field)
 
 
-def _build_device_info(entry_data: dict, coordinator_data: dict | None = None) -> dict:
-    """Build device info dict."""
+def _get_group_label(hass, group: str) -> str:
+    """Return group label in HA configured language."""
+    lang = getattr(hass.config, "language", "en") if hass else "en"
+    labels = GROUP_LABELS_UK if lang and lang.startswith("uk") else GROUP_LABELS
+    label = labels.get(group, group)
+    # Strip emoji prefix for device name (keep it short)
+    return label
+
+
+def _build_device_info(
+    entry_data: dict,
+    coordinator_data: dict | None = None,
+    group: str | None = None,
+    group_label: str | None = None,
+) -> dict:
+    """Build device info dict. Each group becomes a separate device."""
     site_id = entry_data.get(CONF_SITE_ID, "")
     device_sn = entry_data.get(CONF_DEVICE_SN, "")
-    site_name = entry_data.get(CONF_SITE_NAME, "Livoltek")
     device_model = entry_data.get(CONF_DEVICE_MODEL, "inverter")
     product_type = entry_data.get("product_type", "")
 
@@ -80,9 +102,15 @@ def _build_device_info(entry_data: dict, coordinator_data: dict | None = None) -
         device_details = coordinator_data.get("device_details") or {}
         sw_version = device_details.get("firmwareVersion")
 
+    dev_id = f"{site_id}_{device_sn}"
+    dev_name = device_sn
+    if group:
+        dev_id = f"{site_id}_{device_sn}_{group}"
+        dev_name = f"{device_sn} ({group_label or group})"
+
     return {
-        "identifiers": {(DOMAIN, f"{site_id}_{device_sn}")},
-        "name": f"{site_name} ({device_sn})",
+        "identifiers": {(DOMAIN, dev_id)},
+        "name": dev_name,
         "manufacturer": "LIVOLTEK",
         "model": product_type or device_model,
         "sw_version": sw_version,
@@ -207,6 +235,32 @@ DAILY_ENERGY_SENSORS = [
     ("daily_battery_charge", "daily_energy", "chargingCapacity", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, UnitOfEnergy.KILO_WATT_HOUR, "mdi:battery-arrow-up", None),
     ("daily_battery_discharge", "daily_energy", "dischargeCapacity", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, UnitOfEnergy.KILO_WATT_HOUR, "mdi:battery-arrow-down", None),
     ("daily_eps_output", "daily_energy", "epsOutputenergy", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, UnitOfEnergy.KILO_WATT_HOUR, "mdi:power-plug-battery", None),
+    ("daily_diesel_energy", "daily_energy", "dgtotalEnergy", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, UnitOfEnergy.KILO_WATT_HOUR, "mdi:fuel", None),
+    ("daily_ev_consumption", "daily_energy", "evConsumption", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, UnitOfEnergy.KILO_WATT_HOUR, "mdi:ev-station", None),
+]
+
+SITE_INSTALLER_SENSORS = [
+    ("installer_name", "site_installer", "installer", None, None, None, "mdi:domain", EntityCategory.DIAGNOSTIC),
+    ("installer_org_code", "site_installer", "orgCode", None, None, None, "mdi:identifier", EntityCategory.DIAGNOSTIC),
+]
+
+SITE_OWNER_SENSORS = [
+    ("owner_name", "site_owner", "name", None, None, None, "mdi:account", EntityCategory.DIAGNOSTIC),
+    ("owner_email", "site_owner", "email", None, None, None, "mdi:email", EntityCategory.DIAGNOSTIC),
+    ("owner_login_account", "site_owner", "loginAccount", None, None, None, "mdi:account-key", EntityCategory.DIAGNOSTIC),
+    ("owner_country", "site_owner", "country", None, None, None, "mdi:earth", EntityCategory.DIAGNOSTIC),
+]
+
+DEVICE_BASIC_SENSORS = [
+    ("device_communication_status", "device_basic", "communicationStatus", None, None, None, "mdi:lan-connect", EntityCategory.DIAGNOSTIC),
+    ("device_running_status_basic", "device_basic", "runningStatus", None, None, None, "mdi:state-machine", EntityCategory.DIAGNOSTIC),
+    ("device_registration_time", "device_basic", "registrationTime", None, None, None, "mdi:calendar-clock", EntityCategory.DIAGNOSTIC),
+    ("device_power_gen_day", "device_basic", "powerGenerationDay", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, UnitOfEnergy.KILO_WATT_HOUR, "mdi:solar-power", None),
+    ("device_grid_export_day", "device_basic", "negativeDay", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, UnitOfEnergy.KILO_WATT_HOUR, "mdi:transmission-tower-export", None),
+    ("device_grid_import_day", "device_basic", "positiveDay", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, UnitOfEnergy.KILO_WATT_HOUR, "mdi:transmission-tower-import", None),
+    ("device_charge_day", "device_basic", "chargeDay", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, UnitOfEnergy.KILO_WATT_HOUR, "mdi:battery-arrow-up", None),
+    ("device_discharge_day", "device_basic", "dischargeDay", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, UnitOfEnergy.KILO_WATT_HOUR, "mdi:battery-arrow-down", None),
+    ("device_load_day", "device_basic", "loadDay", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, UnitOfEnergy.KILO_WATT_HOUR, "mdi:home-lightning-bolt", None),
 ]
 
 ALL_SENSOR_DEFINITIONS = (
@@ -224,6 +278,9 @@ ALL_SENSOR_DEFINITIONS = (
     + REALTIME_EPS_SENSORS
     + REALTIME_TIMESTAMP_SENSOR
     + DAILY_ENERGY_SENSORS
+    + SITE_INSTALLER_SENSORS
+    + SITE_OWNER_SENSORS
+    + DEVICE_BASIC_SENSORS
 )
 
 # Set of sensor keys that represent ms-epoch timestamps
@@ -309,7 +366,11 @@ class LivoltekSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def device_info(self):
-        return _build_device_info(self._entry_data, self.coordinator.data)
+        group_label = _get_group_label(self.hass, self._data_source)
+        return _build_device_info(
+            self._entry_data, self.coordinator.data,
+            group=self._data_source, group_label=group_label,
+        )
 
     @property
     def native_value(self):
@@ -344,7 +405,7 @@ class LivoltekSensor(CoordinatorEntity, SensorEntity):
             return _ms_to_datetime(raw_value)
 
         # -- Running status: human-readable --------------------------------
-        if self._sensor_key == "running_status":
+        if self._sensor_key in ("running_status", "device_running_status_basic"):
             return RUNNING_STATUS_MAP.get(str(raw_value), str(raw_value))
 
         # -- Site type: human-readable -------------------------------------
@@ -357,6 +418,27 @@ class LivoltekSensor(CoordinatorEntity, SensorEntity):
             if isinstance(val, int):
                 return SITE_STATUS_MAP.get(val, str(val))
             return str(val)
+
+        # -- Power flow status sensors: human-readable ---------------------
+        if self._sensor_key == "pv_status":
+            return PV_STATUS_MAP.get(str(raw_value), str(raw_value))
+
+        if self._sensor_key == "grid_status":
+            return GRID_STATUS_MAP.get(str(raw_value), str(raw_value))
+
+        if self._sensor_key == "load_status":
+            return LOAD_STATUS_MAP.get(str(raw_value), str(raw_value))
+
+        if self._sensor_key == "battery_status":
+            return ENERGY_STATUS_MAP.get(str(raw_value), str(raw_value))
+
+        if self._sensor_key == "charging_pile_status":
+            return CHARGING_PILE_STATUS_MAP.get(str(raw_value), str(raw_value))
+
+        # -- Communication status: map numeric to text ---------------------
+        if self._sensor_key == "device_communication_status":
+            comm_map = {"0": "Offline", "1": "Online"}
+            return comm_map.get(str(raw_value), str(raw_value))
 
         # -- Numeric sensors -----------------------------------------------
         dev_class = getattr(self, "_attr_device_class", None)
@@ -454,8 +536,32 @@ class LivoltekSensor(CoordinatorEntity, SensorEntity):
                     attrs[f"{prefix}_name"] = rec.get("alarmName")
                     attrs[f"{prefix}_code"] = rec.get("alarmCode")
                     attrs[f"{prefix}_status"] = rec.get("alarmStatus")
-                    attrs[f"{prefix}_type"] = rec.get("alarmType")
+                    raw_type = rec.get("alarmType")
+                    attrs[f"{prefix}_type_raw"] = raw_type
+                    attrs[f"{prefix}_type"] = ALARM_TYPE_MAP.get(str(raw_type), str(raw_type)) if raw_type is not None else None
                     attrs[f"{prefix}_time"] = rec.get("originTime")
                     attrs[f"{prefix}_event"] = rec.get("alarmEvent")
+
+        # -- Power flow status sensors: raw + description ------------------
+        _STATUS_ATTR_MAP = {
+            "pv_status": ("pvStatus", PV_STATUS_MAP),
+            "grid_status": ("powerGridStatus", GRID_STATUS_MAP),
+            "load_status": ("loadStatus", LOAD_STATUS_MAP),
+            "battery_status": ("energyStatus", ENERGY_STATUS_MAP),
+            "charging_pile_status": ("chargingPileStatus", CHARGING_PILE_STATUS_MAP),
+        }
+        if self._sensor_key in _STATUS_ATTR_MAP:
+            field, enum_map = _STATUS_ATTR_MAP[self._sensor_key]
+            raw = source_data.get(field)
+            if raw is not None:
+                attrs["raw_value"] = raw
+                attrs["description"] = enum_map.get(str(raw), str(raw))
+
+        # -- Battery type in storage attributes ----------------------------
+        if self._data_source == "storage":
+            bt = source_data.get("batteryType")
+            if bt is not None:
+                attrs["battery_type_raw"] = bt
+                attrs["battery_type"] = BATTERY_TYPE_MAP.get(str(bt), str(bt))
 
         return attrs
