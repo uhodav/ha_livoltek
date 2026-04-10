@@ -1,0 +1,271 @@
+# Livoltek system for Home Assistant
+
+[Українською нижче ⬇️]
+
+Custom Home Assistant integration for Livoltek inverters and BESS via Livoltek cloud API.
+
+## English
+
+### Features
+- UI setup via Config Flow (no YAML required)
+- 5-step setup wizard:
+  1. API credentials (`server`, `secuid`, `key`, `token`)
+  2. Site selection
+  3. Device selection + update interval
+  4. Data group selection (choose endpoint groups to enable)
+  5. Optional BESS control credentials (`account`, `password`)
+- Selective data collection by endpoint groups (10 groups)
+- **93 sensors** total (measurements + diagnostics)
+- BESS control entities:
+  - 5 buttons (start/stop/restart/BMS restart/emergency charging)
+  - 1 work mode select entity
+- Service for setting work mode with optional schedule:
+  - `ha_livoltek.set_work_mode_schedule`
+- Multi-language UI (English/Ukrainian)
+
+### Installation
+#### Option 1: HACS
+1. Open HACS
+2. Add this repository as a custom integration (if needed)
+3. Install **Livoltek system**
+4. Restart Home Assistant
+
+#### Option 2: Manual
+1. Copy `custom_components/ha_livoltek` to your Home Assistant config directory:
+   - `custom_components/ha_livoltek`
+2. Restart Home Assistant
+
+### Configuration values
+#### Main setup (Config Flow)
+- `server_type` — Livoltek server region (`international` / `european`)
+- `secuid` — Security ID
+- `key` — API key
+- `token` — User token
+- `account` (optional) — account for BESS control
+- `password` (optional) — password for BESS control (stored as MD5)
+
+#### Options (after setup)
+- `update_interval`
+- `enabled_groups`
+- `key` (replace current)
+- `token` (replace current)
+- `account` (replace current)
+- `password` (replace current, stored as MD5)
+
+### How to get SECUID / KEY / TOKEN
+1. Go to: https://www.livoltek-portal.com/
+2. Sign in to your Livoltek account
+3. Open **My Profile** (top-right)
+4. Click **Generate Token** to create/get your user token (`token`)
+5. Click **Secure ID** to get:
+   - `secuid` (Security ID)
+   - `key` (API key)
+
+### Data groups and sensors
+You can enable/disable data groups during setup and in options.
+
+1. **Power Flow** (`power_flow`)  
+   PV/grid/load/battery power and statuses, battery SoC, EV charger status, update timestamp.
+
+2. **Site Overview** (`overview`)  
+   Current power, daily/monthly/yearly/lifetime generation, online devices, update timestamp.
+
+3. **Site Details** (`site_details`)  
+   Site type/status, PV capacity, alarm presence, country, timezone, update timestamp.
+
+4. **Device Details** (`device_details`)  
+   Serial number, product type, running status, firmware, manufacturer, work mode, update timestamp.
+
+5. **Battery Storage** (`storage`)  
+   BMS capacity, SoC, cycle count, battery serial.
+
+6. **Device Electricity** (`device_electricity`)  
+   Lifetime PV production and load consumption.
+
+7. **Social Contribution** (`social`)  
+   CO₂ reduction, trees saved, coal saved.
+
+8. **Alarms** (`alarms`)  
+   Alarm count, latest alarm name/time, top alarm details in attributes.
+
+9. **Realtime** (`realtime`)  
+   MPPT channels (PV1..PV12 voltage/current), AC phases, grid power/frequency, battery, EPS, timestamp.
+
+10. **Daily Energy Report** (`daily_energy`)  
+    Daily PV yield, load consumption, grid import/export, battery charge/discharge, EPS output.
+
+### Sensor summary
+- Total sensors: **93**
+- Includes measurement and diagnostic entities
+- Every sensor has `data_group` attribute showing its source group
+
+### Control entities
+#### Buttons (BESS control)
+- `button.inverter_start`
+- `button.inverter_stop`
+- `button.inverter_restart`
+- `button.bms_restart`
+- `button.emergency_charging`
+
+#### Select
+- `select.work_mode_select` — sets inverter work mode
+
+### Service: set work mode with schedule
+Service name: `ha_livoltek.set_work_mode_schedule`
+
+Fields:
+- `device_sn` (required)
+- `work_mode` (required)
+- `schedule_list` (optional, JSON array)
+
+Example:
+```yaml
+service: ha_livoltek.set_work_mode_schedule
+data:
+  device_sn: "HPXXXXXHYYMMNNN"
+  work_mode: 2
+  schedule_list:
+    - chargeType: 1
+      startHour: 11
+      startMin: 0
+      endHour: 18
+      endMin: 0
+      chargingDays: [0, 1, 2, 3, 4]
+```
+
+---
+
+# Livoltek system для Home Assistant
+
+[English above ⬆️]
+
+Кастомна інтеграція Home Assistant для інверторів Livoltek та BESS через хмарний API Livoltek.
+
+## Українська
+
+### Можливості
+- Налаштування через Config Flow (без YAML)
+- Майстер налаштування з 5 кроків:
+  1. API-дані (`server`, `secuid`, `key`, `token`)
+  2. Вибір сайту
+  3. Вибір пристрою + інтервал оновлення
+  4. Вибір груп даних (endpoint groups)
+  5. Опційні дані для керування BESS (`account`, `password`)
+- Вибіркове отримання даних по 10 групах
+- **93 сенсори** (основні + діагностичні)
+- Сутності керування BESS:
+  - 5 кнопок (start/stop/restart/BMS restart/emergency charging)
+  - 1 select-сутність режиму роботи
+- Сервіс для встановлення режиму з розкладом:
+  - `ha_livoltek.set_work_mode_schedule`
+- Багатомовний UI (англійська/українська)
+
+### Встановлення
+#### Варіант 1: HACS
+1. Відкрийте HACS
+2. Додайте цей репозиторій як custom integration (за потреби)
+3. Встановіть **Livoltek system**
+4. Перезапустіть Home Assistant
+
+#### Варіант 2: вручну
+1. Скопіюйте `custom_components/ha_livoltek` у директорію конфігурації Home Assistant:
+   - `custom_components/ha_livoltek`
+2. Перезапустіть Home Assistant
+
+### Параметри налаштування
+#### Основне налаштування (Config Flow)
+- `server_type` — регіон сервера Livoltek (`international` / `european`)
+- `secuid` — Security ID
+- `key` — API key
+- `token` — токен користувача
+- `account` (опційно) — обліковий запис для BESS-керування
+- `password` (опційно) — пароль для BESS-керування (зберігається як MD5)
+
+#### Опції (після додавання)
+- `update_interval`
+- `enabled_groups`
+- `key` (замінити поточний)
+- `token` (замінити поточний)
+- `account` (замінити поточний)
+- `password` (замінити поточний, зберігається як MD5)
+
+### Як отримати SECUID / KEY / TOKEN
+1. Перейдіть на: https://www.livoltek-portal.com/
+2. Увійдіть у ваш акаунт Livoltek
+3. Відкрийте **My Profile** (правий верхній кут)
+4. Натисніть **Generate Token** для отримання токена користувача (`token`)
+5. Натисніть **Secure ID** для отримання:
+   - `secuid` (Security ID)
+   - `key` (API key)
+
+### Групи даних і сенсори
+Групи можна вмикати/вимикати під час налаштування та в опціях.
+
+1. **Power Flow** (`power_flow`)  
+   Потужності PV/мережі/навантаження/батареї, статуси, SoC батареї, статус EV, час оновлення.
+
+2. **Site Overview** (`overview`)  
+   Поточна потужність, генерація за день/місяць/рік/весь час, online-пристрої, час оновлення.
+
+3. **Site Details** (`site_details`)  
+   Тип/статус станції, PV-потужність, наявність тривог, країна, часовий пояс, час оновлення.
+
+4. **Device Details** (`device_details`)  
+   Серійний номер, тип продукту, статус роботи, прошивка, виробник, режим роботи, час оновлення.
+
+5. **Battery Storage** (`storage`)  
+   Місткість BMS, SoC, цикли батареї, серійний номер батареї.
+
+6. **Device Electricity** (`device_electricity`)  
+   Загальна генерація PV і споживання навантаження.
+
+7. **Social Contribution** (`social`)  
+   Зекономлений CO₂, дерева, вугілля.
+
+8. **Alarms** (`alarms`)  
+   Кількість тривог, остання тривога (назва/час), деталі тривог в атрибутах.
+
+9. **Realtime** (`realtime`)  
+   Канали MPPT (PV1..PV12 напруга/струм), AC-фази, потужність/частота мережі, батарея, EPS, timestamp.
+
+10. **Daily Energy Report** (`daily_energy`)  
+    Добові значення генерації/споживання, імпорт/експорт мережі, заряд/розряд батареї, вихід EPS.
+
+### Підсумок по сенсорах
+- Усього сенсорів: **93**
+- Є вимірювальні та діагностичні сутності
+- Кожен сенсор має атрибут `data_group` з назвою групи-джерела
+
+### Сутності керування
+#### Кнопки (BESS control)
+- `button.inverter_start`
+- `button.inverter_stop`
+- `button.inverter_restart`
+- `button.bms_restart`
+- `button.emergency_charging`
+
+#### Select
+- `select.work_mode_select` — вибір режиму роботи інвертора
+
+### Сервіс: встановлення режиму з розкладом
+Назва сервісу: `ha_livoltek.set_work_mode_schedule`
+
+Поля:
+- `device_sn` (обов'язково)
+- `work_mode` (обов'язково)
+- `schedule_list` (опційно, JSON-масив)
+
+Приклад:
+```yaml
+service: ha_livoltek.set_work_mode_schedule
+data:
+  device_sn: "HPXXXXXHYYMMNNN"
+  work_mode: 2
+  schedule_list:
+    - chargeType: 1
+      startHour: 11
+      startMin: 0
+      endHour: 18
+      endMin: 0
+      chargingDays: [0, 1, 2, 3, 4]
+```

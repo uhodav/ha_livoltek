@@ -1,0 +1,498 @@
+{
+  "title": "Livoltek system",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Step 1/5: Livoltek API Credentials",
+        "description": "Enter your Livoltek API credentials.\n\n**How to get credentials:**\n1. Go to [livoltek-portal.com](https://www.livoltek-portal.com/) and log in\n2. Open **My Profile** (top right corner)\n3. Click **Generate Token** to create your User Token\n4. Click **Secure ID** to get your Security ID (secuid) and API Key",
+        "data": {
+          "server_type": "Server",
+          "secuid": "Security ID (secuid)",
+          "key": "API Key",
+          "token": "User Token (from Livoltek portal)"
+        }
+      },
+      "site": {
+        "title": "Step 2/5: Select Site",
+        "description": "Select the site (power station) you want to monitor.",
+        "data": {
+          "site_id": "Site"
+        }
+      },
+      "device": {
+        "title": "Step 3/5: Select Device",
+        "description": "Select a device and set the update interval.",
+        "data": {
+          "device_sn": "Device",
+          "update_interval": "Update interval (minutes)"
+        }
+      },
+      "groups": {
+        "title": "Step 4/5: Data Sources",
+        "description": "Select which data groups to fetch. At least one must be selected.",
+        "data": {
+          "enabled_groups": "Enabled data groups"
+        }
+      },
+      "control": {
+        "title": "Step 5/5: BESS Control (optional)",
+        "description": "Enter account and password for inverter control. Leave blank for monitoring only.",
+        "data": {
+          "account": "Account",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid credentials. Please check secuid and key.",
+      "cannot_connect": "Failed to connect to Livoltek API.",
+      "no_sites": "No sites found for this account.",
+      "no_devices": "No devices found for this site.",
+      "invalid_site": "Invalid site selection.",
+      "invalid_device": "Invalid device selection.",
+      "already_configured": "This device is already configured.",
+      "unknown": "An unknown error occurred.",
+      "no_groups_selected": "At least one data group must be selected."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Livoltek Options",
+        "description": "Configure integration options.",
+        "data": {
+          "update_interval": "Update interval (minutes)",
+          "enabled_groups": "Enabled data groups",
+          "key": "API Key (leave blank to keep current)",
+          "token": "User Token (leave blank to keep current)",
+          "account": "Account for BESS control (leave blank to keep current)",
+          "password": "New password for BESS control (leave blank to keep current)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "pv_power": {
+        "name": "PV Power",
+        "description": "Current solar panel output power"
+      },
+      "grid_power": {
+        "name": "Grid Power",
+        "description": "Current power exchange with the grid (positive = import, negative = export)"
+      },
+      "load_power": {
+        "name": "Load Power",
+        "description": "Current household load consumption power"
+      },
+      "battery_power": {
+        "name": "Battery Power",
+        "description": "Current battery charge/discharge power"
+      },
+      "battery_soc": {
+        "name": "Battery SoC",
+        "description": "Battery state of charge from power flow"
+      },
+      "charging_pile_power": {
+        "name": "EV Charger Power",
+        "description": "Current EV charger power consumption"
+      },
+      "pv_status": {
+        "name": "PV Status",
+        "description": "Solar panel connection status"
+      },
+      "grid_status": {
+        "name": "Grid Status",
+        "description": "Grid connection status"
+      },
+      "load_status": {
+        "name": "Load Status",
+        "description": "Load connection status"
+      },
+      "battery_status": {
+        "name": "Battery Status",
+        "description": "Battery connection status"
+      },
+      "charging_pile_status": {
+        "name": "EV Charger Status",
+        "description": "EV charger connection status"
+      },
+      "power_flow_timestamp": {
+        "name": "Power Flow Update Time",
+        "description": "Timestamp of the last power flow data update"
+      },
+      "current_power": {
+        "name": "Current Power",
+        "description": "Current total power output of the site"
+      },
+      "daily_generation": {
+        "name": "Daily Generation",
+        "description": "Total energy generated today"
+      },
+      "monthly_generation": {
+        "name": "Monthly Generation",
+        "description": "Total energy generated this month"
+      },
+      "yearly_generation": {
+        "name": "Yearly Generation",
+        "description": "Total energy generated this year"
+      },
+      "lifetime_generation": {
+        "name": "Lifetime Generation",
+        "description": "Total energy generated over the lifetime of the system"
+      },
+      "online_devices": {
+        "name": "Online Devices",
+        "description": "Number of devices currently online"
+      },
+      "overview_update_time": {
+        "name": "Overview Update Time",
+        "description": "Timestamp of the last site overview data update"
+      },
+      "site_type": {
+        "name": "Power Station Type",
+        "description": "Type of the power station (grid-tied, solar storage, EV hub, etc.)"
+      },
+      "site_status": {
+        "name": "Site Communication Status",
+        "description": "Communication status of the site (all online, all offline, partial)"
+      },
+      "pv_capacity": {
+        "name": "PV Capacity",
+        "description": "Installed PV capacity in kWp"
+      },
+      "has_alarm": {
+        "name": "Has Alarm",
+        "description": "Whether the site currently has active alarms"
+      },
+      "site_country": {
+        "name": "Site Country",
+        "description": "Country where the site is located"
+      },
+      "site_timezone": {
+        "name": "Site Timezone",
+        "description": "Timezone of the site"
+      },
+      "site_update_time": {
+        "name": "Site Update Time",
+        "description": "Timestamp of the last site details update"
+      },
+      "device_sn": {
+        "name": "Device Serial Number",
+        "description": "Inverter serial number"
+      },
+      "product_type": {
+        "name": "Product Type",
+        "description": "Product type of the device"
+      },
+      "running_status": {
+        "name": "Running Status",
+        "description": "Current running status of the inverter (Normal, Standby, Fault, etc.)"
+      },
+      "firmware_version": {
+        "name": "Firmware Version",
+        "description": "Current firmware version of the device"
+      },
+      "device_type": {
+        "name": "Device Type",
+        "description": "Type of the device"
+      },
+      "device_manufacturer": {
+        "name": "Device Manufacturer",
+        "description": "Manufacturer of the device"
+      },
+      "device_update_time": {
+        "name": "Device Update Time",
+        "description": "Timestamp of the last device details update"
+      },
+      "work_mode": {
+        "name": "Work Mode",
+        "description": "Current inverter work mode (Back Up, Self Use, User Defined, Command Mode)"
+      },
+      "bms_capacity": {
+        "name": "BMS Capacity",
+        "description": "Battery management system rated capacity in Ah"
+      },
+      "current_soc": {
+        "name": "Current Battery SoC",
+        "description": "Current battery state of charge from storage info"
+      },
+      "battery_cycle_count": {
+        "name": "Battery Cycle Count",
+        "description": "Total number of battery charge/discharge cycles"
+      },
+      "battery_sn": {
+        "name": "Battery Serial Number",
+        "description": "Serial number of the battery module"
+      },
+      "pv_produce_electric": {
+        "name": "Inverter Solar Generation",
+        "description": "Lifetime solar energy generated by this inverter"
+      },
+      "load_customer_electric": {
+        "name": "Load Consumption",
+        "description": "Lifetime energy consumed by the load"
+      },
+      "saving_co2": {
+        "name": "CO2 Reduced",
+        "description": "Total CO2 emissions reduced"
+      },
+      "saving_tree": {
+        "name": "Equivalent Trees Planted",
+        "description": "Equivalent number of trees planted"
+      },
+      "saving_coal": {
+        "name": "Standard Coal Reduced",
+        "description": "Equivalent standard coal consumption reduced"
+      },
+      "alarm_total": {
+        "name": "Total Alarms",
+        "description": "Total number of active alarms"
+      },
+      "last_alarm_name": {
+        "name": "Last Alarm",
+        "description": "Name of the most recent alarm"
+      },
+      "last_alarm_time": {
+        "name": "Last Alarm Time",
+        "description": "Time of the most recent alarm"
+      },
+      "pv1_voltage": {
+        "name": "PV1 Voltage",
+        "description": "MPPT channel 1 voltage"
+      },
+      "pv1_current": {
+        "name": "PV1 Current",
+        "description": "MPPT channel 1 current"
+      },
+      "pv2_voltage": {
+        "name": "PV2 Voltage",
+        "description": "MPPT channel 2 voltage"
+      },
+      "pv2_current": {
+        "name": "PV2 Current",
+        "description": "MPPT channel 2 current"
+      },
+      "pv3_voltage": {
+        "name": "PV3 Voltage",
+        "description": "MPPT channel 3 voltage"
+      },
+      "pv3_current": {
+        "name": "PV3 Current",
+        "description": "MPPT channel 3 current"
+      },
+      "pv4_voltage": {
+        "name": "PV4 Voltage",
+        "description": "MPPT channel 4 voltage"
+      },
+      "pv4_current": {
+        "name": "PV4 Current",
+        "description": "MPPT channel 4 current"
+      },
+      "pv5_voltage": {
+        "name": "PV5 Voltage",
+        "description": "MPPT channel 5 voltage"
+      },
+      "pv5_current": {
+        "name": "PV5 Current",
+        "description": "MPPT channel 5 current"
+      },
+      "pv6_voltage": {
+        "name": "PV6 Voltage",
+        "description": "MPPT channel 6 voltage"
+      },
+      "pv6_current": {
+        "name": "PV6 Current",
+        "description": "MPPT channel 6 current"
+      },
+      "pv7_voltage": {
+        "name": "PV7 Voltage",
+        "description": "MPPT channel 7 voltage"
+      },
+      "pv7_current": {
+        "name": "PV7 Current",
+        "description": "MPPT channel 7 current"
+      },
+      "pv8_voltage": {
+        "name": "PV8 Voltage",
+        "description": "MPPT channel 8 voltage"
+      },
+      "pv8_current": {
+        "name": "PV8 Current",
+        "description": "MPPT channel 8 current"
+      },
+      "pv9_voltage": {
+        "name": "PV9 Voltage",
+        "description": "MPPT channel 9 voltage"
+      },
+      "pv9_current": {
+        "name": "PV9 Current",
+        "description": "MPPT channel 9 current"
+      },
+      "pv10_voltage": {
+        "name": "PV10 Voltage",
+        "description": "MPPT channel 10 voltage"
+      },
+      "pv10_current": {
+        "name": "PV10 Current",
+        "description": "MPPT channel 10 current"
+      },
+      "pv11_voltage": {
+        "name": "PV11 Voltage",
+        "description": "MPPT channel 11 voltage"
+      },
+      "pv11_current": {
+        "name": "PV11 Current",
+        "description": "MPPT channel 11 current"
+      },
+      "pv12_voltage": {
+        "name": "PV12 Voltage",
+        "description": "MPPT channel 12 voltage"
+      },
+      "pv12_current": {
+        "name": "PV12 Current",
+        "description": "MPPT channel 12 current"
+      },
+      "ac_phase_a_voltage": {
+        "name": "Phase A Voltage",
+        "description": "AC grid phase A (R) voltage"
+      },
+      "ac_phase_a_current": {
+        "name": "Phase A Current",
+        "description": "AC grid phase A (R) current"
+      },
+      "ac_phase_b_voltage": {
+        "name": "Phase B Voltage",
+        "description": "AC grid phase B (S) voltage"
+      },
+      "ac_phase_b_current": {
+        "name": "Phase B Current",
+        "description": "AC grid phase B (S) current"
+      },
+      "ac_phase_c_voltage": {
+        "name": "Phase C Voltage",
+        "description": "AC grid phase C (T) voltage"
+      },
+      "ac_phase_c_current": {
+        "name": "Phase C Current",
+        "description": "AC grid phase C (T) current"
+      },
+      "grid_active_power": {
+        "name": "Grid Active Power",
+        "description": "Real-time grid active power in watts"
+      },
+      "grid_apparent_power": {
+        "name": "Grid Apparent Power",
+        "description": "Real-time grid apparent power in VA"
+      },
+      "grid_frequency": {
+        "name": "Grid Frequency",
+        "description": "AC grid frequency"
+      },
+      "battery_voltage": {
+        "name": "Battery Voltage",
+        "description": "Real-time battery voltage"
+      },
+      "battery_current": {
+        "name": "Battery Current",
+        "description": "Real-time battery current"
+      },
+      "battery_soc_realtime": {
+        "name": "Battery SoC (Realtime)",
+        "description": "Real-time battery state of charge"
+      },
+      "eps_voltage": {
+        "name": "EPS Voltage",
+        "description": "Emergency power supply output voltage"
+      },
+      "eps_current": {
+        "name": "EPS Current",
+        "description": "Emergency power supply output current"
+      },
+      "eps_frequency": {
+        "name": "EPS Frequency",
+        "description": "Emergency power supply output frequency"
+      },
+      "realtime_timestamp": {
+        "name": "Realtime Data Update Time",
+        "description": "Timestamp of the last realtime technical data update"
+      },
+      "daily_pv_yield": {
+        "name": "Daily PV Yield",
+        "description": "Total solar energy generated today"
+      },
+      "daily_load_consumption": {
+        "name": "Daily Load Consumption",
+        "description": "Total load energy consumed today"
+      },
+      "daily_grid_import": {
+        "name": "Daily Grid Import",
+        "description": "Total energy imported from the grid today"
+      },
+      "daily_grid_export": {
+        "name": "Daily Grid Export",
+        "description": "Total energy exported to the grid today"
+      },
+      "daily_battery_charge": {
+        "name": "Daily Battery Charge",
+        "description": "Total energy charged into battery today"
+      },
+      "daily_battery_discharge": {
+        "name": "Daily Battery Discharge",
+        "description": "Total energy discharged from battery today"
+      },
+      "daily_eps_output": {
+        "name": "Daily EPS Output",
+        "description": "Total emergency power supply output energy today"
+      }
+    },
+    "button": {
+      "inverter_start": {
+        "name": "Inverter Start",
+        "description": "Start the inverter"
+      },
+      "inverter_stop": {
+        "name": "Inverter Stop",
+        "description": "Stop the inverter"
+      },
+      "inverter_restart": {
+        "name": "Inverter Restart",
+        "description": "Restart the inverter"
+      },
+      "bms_restart": {
+        "name": "BMS Restart",
+        "description": "Restart the battery management system"
+      },
+      "emergency_charging": {
+        "name": "Emergency Charging",
+        "description": "Start emergency battery charging"
+      }
+    },
+    "select": {
+      "work_mode_select": {
+        "name": "Work Mode",
+        "description": "Select inverter work mode (Back Up, Self Use, User Defined, Command Mode)"
+      }
+    }
+  },
+  "services": {
+    "set_work_mode_schedule": {
+      "name": "Set work mode with schedule",
+      "description": "Set inverter work mode with optional charge/discharge schedule for User Defined Mode.",
+      "fields": {
+        "device_sn": {
+          "name": "Device serial number",
+          "description": "The serial number of the inverter"
+        },
+        "work_mode": {
+          "name": "Work mode",
+          "description": "Work mode value (depends on product type, see device description)"
+        },
+        "schedule_list": {
+          "name": "Schedule list",
+          "description": "JSON array of charge/discharge schedule entries for User Defined Mode"
+        }
+      }
+    }
+  }
+}

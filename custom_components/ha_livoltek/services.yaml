@@ -1,0 +1,39 @@
+set_work_mode_schedule:
+  name: Set work mode with schedule
+  description: >-
+    Set inverter work mode with optional charge/discharge schedule.
+    For User Defined Mode, you can provide a scheduleList with time slots.
+  fields:
+    device_sn:
+      name: Device serial number
+      description: The serial number of the inverter
+      required: true
+      example: "HPXXXXXHYYMMNNN"
+      selector:
+        text:
+    work_mode:
+      name: Work mode
+      description: >-
+        Work mode value (depends on product type).
+        GF1/BV1: 0=Back Up, 1=Economic.
+        Hyper: 0=Self Use, 1=Back Up, 2=User Defined.
+        Check device_description for your device.
+      required: true
+      example: 2
+      selector:
+        number:
+          min: 0
+          max: 10
+          mode: box
+    schedule_list:
+      name: Schedule list
+      description: >-
+        JSON array of schedule entries for User Defined Mode.
+        Each entry: {"chargeType": 1 (charge) or 2 (discharge),
+        "startHour": 0-23, "startMin": 0-59, "endHour": 0-23, "endMin": 0-59,
+        "chargingDays": [0-6]} (days optional for modbus < 0.48).
+      required: false
+      example: '[{"chargeType": 1, "startHour": 11, "startMin": 0, "endHour": 18, "endMin": 0, "chargingDays": [0,1,2,3,4]}]'
+      selector:
+        text:
+          multiline: true
