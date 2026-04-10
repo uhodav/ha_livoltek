@@ -1,0 +1,498 @@
+{
+  "title": "Livoltek system",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Крок 1/5: Облікові дані Livoltek API",
+        "description": "Введіть облікові дані Livoltek API.\n\n**Як отримати облікові дані:**\n1. Перейдіть на [livoltek-portal.com](https://www.livoltek-portal.com/) та увійдіть\n2. Відкрийте **My Profile** (верхній правий кут)\n3. Натисніть **Generate Token** щоб створити токен користувача\n4. Натисніть **Secure ID** щоб отримати Security ID (secuid) та API Key",
+        "data": {
+          "server_type": "Сервер",
+          "secuid": "Security ID (secuid)",
+          "key": "API Key",
+          "token": "Токен користувача (з порталу Livoltek)"
+        }
+      },
+      "site": {
+        "title": "Крок 2/5: Виберіть сайт",
+        "description": "Виберіть сайт (електростанцію) для моніторингу.",
+        "data": {
+          "site_id": "Сайт"
+        }
+      },
+      "device": {
+        "title": "Крок 3/5: Виберіть пристрій",
+        "description": "Виберіть пристрій та встановіть інтервал оновлення.",
+        "data": {
+          "device_sn": "Пристрій",
+          "update_interval": "Інтервал оновлення (хвилин)"
+        }
+      },
+      "groups": {
+        "title": "Крок 4/5: Джерела даних",
+        "description": "Виберіть які групи даних отримувати. Повинна бути вибрана хоча б одна.",
+        "data": {
+          "enabled_groups": "Увімкнені групи даних"
+        }
+      },
+      "control": {
+        "title": "Крок 5/5: Управління BESS (необов'язково)",
+        "description": "Введіть обліковий запис та пароль для управління інвертором. Залиште порожнім для режиму моніторингу.",
+        "data": {
+          "account": "Обліковий запис",
+          "password": "Пароль"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Невірні облікові дані. Перевірте secuid та key.",
+      "cannot_connect": "Не вдалося підключитися до Livoltek API.",
+      "no_sites": "Не знайдено сайтів для цього облікового запису.",
+      "no_devices": "Не знайдено пристроїв для цього сайту.",
+      "invalid_site": "Невірний вибір сайту.",
+      "invalid_device": "Невірний вибір пристрою.",
+      "already_configured": "Цей пристрій вже налаштовано.",
+      "unknown": "Виникла невідома помилка.",
+      "no_groups_selected": "Повинна бути вибрана хоча б одна група даних."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Налаштування Livoltek",
+        "description": "Налаштуйте параметри інтеграції.",
+        "data": {
+          "update_interval": "Інтервал оновлення (хвилин)",
+          "enabled_groups": "Увімкнені групи даних",
+          "key": "API Key (залиште порожнім, щоб зберегти поточний)",
+          "token": "Токен користувача (залиште порожнім, щоб зберегти поточний)",
+          "account": "Обліковий запис BESS (залиште порожнім, щоб зберегти поточний)",
+          "password": "Новий пароль BESS (залиште порожнім, щоб зберегти поточний)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "pv_power": {
+        "name": "Потужність PV",
+        "description": "Поточна вихідна потужність сонячних панелей"
+      },
+      "grid_power": {
+        "name": "Потужність мережі",
+        "description": "Поточна потужність обміну з мережею (додатна = імпорт, від'ємна = експорт)"
+      },
+      "load_power": {
+        "name": "Потужність навантаження",
+        "description": "Поточна потужність споживання домогосподарства"
+      },
+      "battery_power": {
+        "name": "Потужність батареї",
+        "description": "Поточна потужність заряду/розряду батареї"
+      },
+      "battery_soc": {
+        "name": "Заряд батареї",
+        "description": "Рівень заряду батареї з потоку енергії"
+      },
+      "charging_pile_power": {
+        "name": "Потужність EV зарядки",
+        "description": "Поточна потужність споживання EV зарядного пристрою"
+      },
+      "pv_status": {
+        "name": "Статус PV",
+        "description": "Статус підключення сонячних панелей"
+      },
+      "grid_status": {
+        "name": "Статус мережі",
+        "description": "Статус підключення до мережі"
+      },
+      "load_status": {
+        "name": "Статус навантаження",
+        "description": "Статус підключення навантаження"
+      },
+      "battery_status": {
+        "name": "Статус батареї",
+        "description": "Статус підключення батареї"
+      },
+      "charging_pile_status": {
+        "name": "Статус EV зарядки",
+        "description": "Статус підключення EV зарядного пристрою"
+      },
+      "power_flow_timestamp": {
+        "name": "Час оновлення потоку енергії",
+        "description": "Час останнього оновлення даних потоку енергії"
+      },
+      "current_power": {
+        "name": "Поточна потужність",
+        "description": "Поточна загальна вихідна потужність сайту"
+      },
+      "daily_generation": {
+        "name": "Денна генерація",
+        "description": "Загальна кількість згенерованої енергії за сьогодні"
+      },
+      "monthly_generation": {
+        "name": "Місячна генерація",
+        "description": "Загальна кількість згенерованої енергії за місяць"
+      },
+      "yearly_generation": {
+        "name": "Річна генерація",
+        "description": "Загальна кількість згенерованої енергії за рік"
+      },
+      "lifetime_generation": {
+        "name": "Загальна генерація",
+        "description": "Загальна кількість згенерованої енергії за весь час"
+      },
+      "online_devices": {
+        "name": "Пристроїв онлайн",
+        "description": "Кількість пристроїв, які зараз онлайн"
+      },
+      "overview_update_time": {
+        "name": "Час оновлення огляду",
+        "description": "Час останнього оновлення даних огляду сайту"
+      },
+      "site_type": {
+        "name": "Тип електростанції",
+        "description": "Тип електростанції (мережева, з накопичувачем, EV хаб тощо)"
+      },
+      "site_status": {
+        "name": "Статус зв'язку сайту",
+        "description": "Статус зв'язку сайту (всі онлайн, всі офлайн, частково)"
+      },
+      "pv_capacity": {
+        "name": "Потужність PV",
+        "description": "Встановлена потужність PV у кВт-пік"
+      },
+      "has_alarm": {
+        "name": "Є тривога",
+        "description": "Чи є на сайті активні тривоги"
+      },
+      "site_country": {
+        "name": "Країна сайту",
+        "description": "Країна розташування сайту"
+      },
+      "site_timezone": {
+        "name": "Часовий пояс сайту",
+        "description": "Часовий пояс сайту"
+      },
+      "site_update_time": {
+        "name": "Час оновлення сайту",
+        "description": "Час останнього оновлення деталей сайту"
+      },
+      "device_sn": {
+        "name": "Серійний номер пристрою",
+        "description": "Серійний номер інвертора"
+      },
+      "product_type": {
+        "name": "Тип продукту",
+        "description": "Тип продукту пристрою"
+      },
+      "running_status": {
+        "name": "Статус роботи",
+        "description": "Поточний статус роботи інвертора (Нормальний, Очікування, Несправність тощо)"
+      },
+      "firmware_version": {
+        "name": "Версія прошивки",
+        "description": "Поточна версія прошивки пристрою"
+      },
+      "device_type": {
+        "name": "Тип пристрою",
+        "description": "Тип пристрою"
+      },
+      "device_manufacturer": {
+        "name": "Виробник пристрою",
+        "description": "Виробник пристрою"
+      },
+      "device_update_time": {
+        "name": "Час оновлення пристрою",
+        "description": "Час останнього оновлення деталей пристрою"
+      },
+      "work_mode": {
+        "name": "Режим роботи",
+        "description": "Поточний режим роботи інвертора (Резерв, Самоспоживання, Налаштований, Командний)"
+      },
+      "bms_capacity": {
+        "name": "Ємність BMS",
+        "description": "Номінальна ємність системи управління батареєю в Аг"
+      },
+      "current_soc": {
+        "name": "Поточний заряд батареї",
+        "description": "Поточний рівень заряду батареї з інформації накопичувача"
+      },
+      "battery_cycle_count": {
+        "name": "Кількість циклів батареї",
+        "description": "Загальна кількість циклів заряду/розряду батареї"
+      },
+      "battery_sn": {
+        "name": "Серійний номер батареї",
+        "description": "Серійний номер модуля батареї"
+      },
+      "pv_produce_electric": {
+        "name": "Генерація інвертора",
+        "description": "Загальна сонячна енергія, згенерована цим інвертором"
+      },
+      "load_customer_electric": {
+        "name": "Споживання навантаження",
+        "description": "Загальна енергія, спожита навантаженням"
+      },
+      "saving_co2": {
+        "name": "Зменшення CO2",
+        "description": "Загальне зменшення викидів CO2"
+      },
+      "saving_tree": {
+        "name": "Еквівалент посаджених дерев",
+        "description": "Еквівалентна кількість посаджених дерев"
+      },
+      "saving_coal": {
+        "name": "Зменшення вугілля",
+        "description": "Еквівалентне зменшення споживання стандартного вугілля"
+      },
+      "alarm_total": {
+        "name": "Всього тривог",
+        "description": "Загальна кількість активних тривог"
+      },
+      "last_alarm_name": {
+        "name": "Остання тривога",
+        "description": "Назва найновішої тривоги"
+      },
+      "last_alarm_time": {
+        "name": "Час останньої тривоги",
+        "description": "Час найновішої тривоги"
+      },
+      "pv1_voltage": {
+        "name": "Напруга PV1",
+        "description": "Напруга MPPT каналу 1"
+      },
+      "pv1_current": {
+        "name": "Струм PV1",
+        "description": "Струм MPPT каналу 1"
+      },
+      "pv2_voltage": {
+        "name": "Напруга PV2",
+        "description": "Напруга MPPT каналу 2"
+      },
+      "pv2_current": {
+        "name": "Струм PV2",
+        "description": "Струм MPPT каналу 2"
+      },
+      "pv3_voltage": {
+        "name": "Напруга PV3",
+        "description": "Напруга MPPT каналу 3"
+      },
+      "pv3_current": {
+        "name": "Струм PV3",
+        "description": "Струм MPPT каналу 3"
+      },
+      "pv4_voltage": {
+        "name": "Напруга PV4",
+        "description": "Напруга MPPT каналу 4"
+      },
+      "pv4_current": {
+        "name": "Струм PV4",
+        "description": "Струм MPPT каналу 4"
+      },
+      "pv5_voltage": {
+        "name": "Напруга PV5",
+        "description": "Напруга MPPT каналу 5"
+      },
+      "pv5_current": {
+        "name": "Струм PV5",
+        "description": "Струм MPPT каналу 5"
+      },
+      "pv6_voltage": {
+        "name": "Напруга PV6",
+        "description": "Напруга MPPT каналу 6"
+      },
+      "pv6_current": {
+        "name": "Струм PV6",
+        "description": "Струм MPPT каналу 6"
+      },
+      "pv7_voltage": {
+        "name": "Напруга PV7",
+        "description": "Напруга MPPT каналу 7"
+      },
+      "pv7_current": {
+        "name": "Струм PV7",
+        "description": "Струм MPPT каналу 7"
+      },
+      "pv8_voltage": {
+        "name": "Напруга PV8",
+        "description": "Напруга MPPT каналу 8"
+      },
+      "pv8_current": {
+        "name": "Струм PV8",
+        "description": "Струм MPPT каналу 8"
+      },
+      "pv9_voltage": {
+        "name": "Напруга PV9",
+        "description": "Напруга MPPT каналу 9"
+      },
+      "pv9_current": {
+        "name": "Струм PV9",
+        "description": "Струм MPPT каналу 9"
+      },
+      "pv10_voltage": {
+        "name": "Напруга PV10",
+        "description": "Напруга MPPT каналу 10"
+      },
+      "pv10_current": {
+        "name": "Струм PV10",
+        "description": "Струм MPPT каналу 10"
+      },
+      "pv11_voltage": {
+        "name": "Напруга PV11",
+        "description": "Напруга MPPT каналу 11"
+      },
+      "pv11_current": {
+        "name": "Струм PV11",
+        "description": "Струм MPPT каналу 11"
+      },
+      "pv12_voltage": {
+        "name": "Напруга PV12",
+        "description": "Напруга MPPT каналу 12"
+      },
+      "pv12_current": {
+        "name": "Струм PV12",
+        "description": "Струм MPPT каналу 12"
+      },
+      "ac_phase_a_voltage": {
+        "name": "Напруга фази A",
+        "description": "Напруга фази A (R) мережі змінного струму"
+      },
+      "ac_phase_a_current": {
+        "name": "Струм фази A",
+        "description": "Струм фази A (R) мережі змінного струму"
+      },
+      "ac_phase_b_voltage": {
+        "name": "Напруга фази B",
+        "description": "Напруга фази B (S) мережі змінного струму"
+      },
+      "ac_phase_b_current": {
+        "name": "Струм фази B",
+        "description": "Струм фази B (S) мережі змінного струму"
+      },
+      "ac_phase_c_voltage": {
+        "name": "Напруга фази C",
+        "description": "Напруга фази C (T) мережі змінного струму"
+      },
+      "ac_phase_c_current": {
+        "name": "Струм фази C",
+        "description": "Струм фази C (T) мережі змінного струму"
+      },
+      "grid_active_power": {
+        "name": "Активна потужність мережі",
+        "description": "Активна потужність мережі в реальному часі у ватах"
+      },
+      "grid_apparent_power": {
+        "name": "Повна потужність мережі",
+        "description": "Повна потужність мережі в реальному часі у ВА"
+      },
+      "grid_frequency": {
+        "name": "Частота мережі",
+        "description": "Частота мережі змінного струму"
+      },
+      "battery_voltage": {
+        "name": "Напруга батареї",
+        "description": "Напруга батареї в реальному часі"
+      },
+      "battery_current": {
+        "name": "Струм батареї",
+        "description": "Струм батареї в реальному часі"
+      },
+      "battery_soc_realtime": {
+        "name": "Заряд батареї (реальний час)",
+        "description": "Рівень заряду батареї в реальному часі"
+      },
+      "eps_voltage": {
+        "name": "Напруга EPS",
+        "description": "Вихідна напруга аварійного живлення"
+      },
+      "eps_current": {
+        "name": "Струм EPS",
+        "description": "Вихідний струм аварійного живлення"
+      },
+      "eps_frequency": {
+        "name": "Частота EPS",
+        "description": "Вихідна частота аварійного живлення"
+      },
+      "realtime_timestamp": {
+        "name": "Час оновлення реальних даних",
+        "description": "Час останнього оновлення технічних даних реального часу"
+      },
+      "daily_pv_yield": {
+        "name": "Денна генерація PV",
+        "description": "Загальна сонячна енергія, згенерована за сьогодні"
+      },
+      "daily_load_consumption": {
+        "name": "Денне споживання",
+        "description": "Загальне споживання навантаження за сьогодні"
+      },
+      "daily_grid_import": {
+        "name": "Денний імпорт з мережі",
+        "description": "Загальна енергія, імпортована з мережі за сьогодні"
+      },
+      "daily_grid_export": {
+        "name": "Денний експорт в мережу",
+        "description": "Загальна енергія, експортована в мережу за сьогодні"
+      },
+      "daily_battery_charge": {
+        "name": "Денний заряд батареї",
+        "description": "Загальна енергія, заряджена в батарею за сьогодні"
+      },
+      "daily_battery_discharge": {
+        "name": "Денний розряд батареї",
+        "description": "Загальна енергія, розряджена з батареї за сьогодні"
+      },
+      "daily_eps_output": {
+        "name": "Денний вихід EPS",
+        "description": "Загальна вихідна енергія аварійного живлення за сьогодні"
+      }
+    },
+    "button": {
+      "inverter_start": {
+        "name": "Запуск інвертора",
+        "description": "Запустити інвертор"
+      },
+      "inverter_stop": {
+        "name": "Зупинка інвертора",
+        "description": "Зупинити інвертор"
+      },
+      "inverter_restart": {
+        "name": "Перезапуск інвертора",
+        "description": "Перезапустити інвертор"
+      },
+      "bms_restart": {
+        "name": "Перезапуск BMS",
+        "description": "Перезапустити систему управління батареєю"
+      },
+      "emergency_charging": {
+        "name": "Аварійна зарядка",
+        "description": "Запустити аварійну зарядку батареї"
+      }
+    },
+    "select": {
+      "work_mode_select": {
+        "name": "Режим роботи",
+        "description": "Вибір режиму роботи інвертора (Резерв, Самоспоживання, Налаштований, Командний)"
+      }
+    }
+  },
+  "services": {
+    "set_work_mode_schedule": {
+      "name": "Встановити режим роботи з розкладом",
+      "description": "Встановити режим роботи інвертора з опціональним розкладом заряду/розряду для режиму User Defined.",
+      "fields": {
+        "device_sn": {
+          "name": "Серійний номер пристрою",
+          "description": "Серійний номер інвертора"
+        },
+        "work_mode": {
+          "name": "Режим роботи",
+          "description": "Значення режиму роботи (залежить від типу продукту, див. опис пристрою)"
+        },
+        "schedule_list": {
+          "name": "Список розкладу",
+          "description": "JSON масив записів розкладу заряду/розряду для режиму User Defined"
+        }
+      }
+    }
+  }
+}
