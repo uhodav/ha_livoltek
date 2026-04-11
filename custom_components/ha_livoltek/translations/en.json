@@ -548,8 +548,7 @@
     },
     "select": {
       "work_mode_select": {
-        "name": "Work Mode",
-        "description": "Select inverter work mode (Back Up, Self Use, User Defined, Command Mode)"
+        "name": "Work Mode"
       }
     }
   },
