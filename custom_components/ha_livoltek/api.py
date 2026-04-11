@@ -134,8 +134,10 @@ class LivoltekApi:
                 raw = await resp.text()
                 data = json_mod.loads(raw)
 
-                if str(data.get("code")) == "401":
-                    # Auth token expired, re-login and retry
+                # If code signals auth error or message says login required, re-login and retry
+                code = str(data.get("code"))
+                msg = str(data.get("message", "")).lower()
+                if code in ("401", "403", "None") or "login" in msg or "please login" in msg:
                     await self.login()
                     headers["Authorization"] = self._auth_token
                     async with session.request(
