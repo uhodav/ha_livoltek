@@ -1,11 +1,10 @@
 {
   "title": "Livoltek system",
-  "livoltek_portal_url": "https://www.livoltek-portal.com/",
   "config": {
     "step": {
       "user": {
         "title": "Крок 1/5: Облікові дані Livoltek API",
-        "description": "Введіть облікові дані Livoltek API.\n\nЯк отримати облікові дані:\n1. Перейдіть на {livoltek_portal_url} та увійдіть\n2. Відкрийте My Profile (верхній правий кут)\n3. Натисніть Generate Token щоб створити токен користувача\n4. Натисніть Secure ID щоб отримати Security ID (secuid) та API Key",
+        "description": "Введіть облікові дані Livoltek API.\n\nЯк отримати облікові дані:\n1. Перейдіть на livoltek-portal.com та увійдіть\n2. Відкрийте My Profile (верхній правий кут)\n3. Натисніть Generate Token щоб створити токен користувача\n4. Натисніть Secure ID щоб отримати Security ID (secuid) та API Key",
         "data": {
           "server_type": "Сервер",
           "secuid": "Security ID (secuid)",
