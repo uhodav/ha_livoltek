@@ -531,24 +531,19 @@
     },
     "button": {
       "inverter_start": {
-        "name": "Inverter Start",
-        "description": "Start the inverter"
+        "name": "Inverter Start"
       },
       "inverter_stop": {
-        "name": "Inverter Stop",
-        "description": "Stop the inverter"
+        "name": "Inverter Stop"
       },
       "inverter_restart": {
-        "name": "Inverter Restart",
-        "description": "Restart the inverter"
+        "name": "Inverter Restart"
       },
       "bms_restart": {
-        "name": "BMS Restart",
-        "description": "Restart the battery management system"
+        "name": "BMS Restart"
       },
       "emergency_charging": {
-        "name": "Emergency Charging",
-        "description": "Start emergency battery charging"
+        "name": "Emergency Charging"
       }
     },
     "select": {

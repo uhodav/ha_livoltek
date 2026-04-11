@@ -1,10 +1,11 @@
 {
   "domain": "ha_livoltek",
   "name": "Livoltek system",
-  "version": "1.0.0",
-  "documentation": "https://github.com/uhodav/ha_livoltek/blob/main/README.md",
+  "issue_tracker": "https://github.com/uhodav/ha_livoltek/issues",
   "codeowners": ["@uhodav"],
-  "requirements": [],
+  "config_flow": true,
+  "documentation": "https://github.com/uhodav/ha_livoltek/blob/main/README.md",
   "iot_class": "cloud_polling",
-  "config_flow": true
+  "requirements": [],
+  "version": "1.0.0"
 }
