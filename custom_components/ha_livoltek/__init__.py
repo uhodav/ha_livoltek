@@ -202,7 +202,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     else:
                         result["site_installer"] = raw_inst or {}
                 except LivoltekApiError:
-                    _LOGGER.debug("Site installer not available for site %s", site_id)
+                    _LOGGER.error("Site installer not available for site %s", site_id)
                     result["site_installer"] = {}
             else:
                 result["site_installer"] = {}
@@ -216,7 +216,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     else:
                         result["site_owner"] = raw_owner or {}
                 except LivoltekApiError:
-                    _LOGGER.debug("Site owner not available for site %s", site_id)
+                    _LOGGER.error("Site owner not available for site %s", site_id)
                     result["site_owner"] = {}
             else:
                 result["site_owner"] = {}
@@ -231,7 +231,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     else:
                         result["device_basic"] = raw_basic or {}
                 except LivoltekApiError:
-                    _LOGGER.debug("Device basic data not available for %s", device_sn)
+                    _LOGGER.error("Device basic data not available for %s", device_sn)
                     result["device_basic"] = {}
             else:
                 result["device_basic"] = {}
@@ -241,8 +241,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if has_control:
                 try:
                     device_description = await api.get_device_description(device_sn)
-                except LivoltekApiError:
-                    _LOGGER.error("Device description not available for %s", device_sn)
+                except LivoltekApiError as err:
+                    _LOGGER.error("Device description not available for %s: %s", device_sn, err)
             result["device_description"] = device_description or {}
 
             # ── Persist refreshed auth token ─────────────────────────
