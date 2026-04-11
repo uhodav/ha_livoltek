@@ -270,6 +270,16 @@ class LivoltekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             for g in ALL_GROUPS
         ]
 
+        always_enabled = ["power_flow"]
+        other_groups = [g for g in ALL_GROUPS if g != "power_flow"]
+        group_options = [
+            selector.SelectOptionDict(
+                value=g,
+                label=GROUP_LABELS.get(g, g),
+                disabled=(g == "power_flow")
+            )
+            for g in ALL_GROUPS
+        ]
         return self.async_show_form(
             step_id="groups",
             data_schema=vol.Schema(

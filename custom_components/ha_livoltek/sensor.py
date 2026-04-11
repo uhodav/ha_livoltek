@@ -169,7 +169,6 @@ DEVICE_DETAILS_SENSORS = [
 
 STORAGE_SENSORS = [
     ("bms_capacity", "storage", "BMSCapacity", None, SensorStateClass.MEASUREMENT, "Ah", "mdi:battery-high", None),
-    ("current_soc", "storage", "currentSoc", SensorDeviceClass.BATTERY, SensorStateClass.MEASUREMENT, PERCENTAGE, "mdi:battery", None),
     ("battery_cycle_count", "storage", "cycleCount", None, SensorStateClass.TOTAL_INCREASING, None, "mdi:battery-sync", EntityCategory.DIAGNOSTIC),
     ("battery_sn", "storage", "batterySn", None, None, None, "mdi:identifier", EntityCategory.DIAGNOSTIC),
 ]
@@ -206,7 +205,7 @@ REALTIME_AC_SENSORS = [
     ("ac_phase_b_current", "realtime", "sCurrent", SensorDeviceClass.CURRENT, SensorStateClass.MEASUREMENT, UnitOfElectricCurrent.AMPERE, "mdi:sine-wave", None),
     ("ac_phase_c_voltage", "realtime", "tVoltage", SensorDeviceClass.VOLTAGE, SensorStateClass.MEASUREMENT, UnitOfElectricPotential.VOLT, "mdi:sine-wave", None),
     ("ac_phase_c_current", "realtime", "tCurrent", SensorDeviceClass.CURRENT, SensorStateClass.MEASUREMENT, UnitOfElectricCurrent.AMPERE, "mdi:sine-wave", None),
-    ("grid_active_power", "realtime", "dwActivePower", SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, UnitOfPower.WATT, "mdi:flash", None),
+    ("grid_active_power", "realtime", "dwActivePower", SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, UnitOfPower.KILO_WATT, "mdi:flash", None),
     ("grid_apparent_power", "realtime", "dwApparentPower", SensorDeviceClass.APPARENT_POWER, SensorStateClass.MEASUREMENT, "VA", "mdi:flash-outline", None),
     ("grid_frequency", "realtime", "girdFrequency", SensorDeviceClass.FREQUENCY, SensorStateClass.MEASUREMENT, UnitOfFrequency.HERTZ, "mdi:sine-wave", None),
 ]
@@ -214,7 +213,6 @@ REALTIME_AC_SENSORS = [
 REALTIME_BATTERY_SENSORS = [
     ("battery_voltage", "realtime", "batteryVoltage", SensorDeviceClass.VOLTAGE, SensorStateClass.MEASUREMENT, UnitOfElectricPotential.VOLT, "mdi:battery", None),
     ("battery_current", "realtime", "batteryCurrent", SensorDeviceClass.CURRENT, SensorStateClass.MEASUREMENT, UnitOfElectricCurrent.AMPERE, "mdi:battery-charging", None),
-    ("battery_soc_realtime", "realtime", "batterySoc", SensorDeviceClass.BATTERY, SensorStateClass.MEASUREMENT, PERCENTAGE, "mdi:battery", None),
 ]
 
 REALTIME_EPS_SENSORS = [
@@ -374,6 +372,18 @@ class LivoltekSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self):
+        if self._sensor_key == "battery_soc":
+            data = self.coordinator.data or {}
+            soc_realtime = (data.get("realtime") or {}).get("batterySoc")
+            soc_storage = (data.get("storage") or {}).get("currentSoc")
+            soc_powerflow = (data.get("power_flow") or {}).get("energySoc")
+            # Используем последнее не-None значение
+            for val in (soc_realtime, soc_storage, soc_powerflow):
+                if val is not None:
+                    self._last_soc = _safe_float(val)
+                    break
+            return getattr(self, "_last_soc", None)
+
         data = self.coordinator.data or {}
         source_data = data.get(self._data_source, {})
         if source_data is None:
@@ -484,6 +494,33 @@ class LivoltekSensor(CoordinatorEntity, SensorEntity):
         if source_data is None:
             return {}
         attrs = {"data_group": self._data_source}
+
+        if self._sensor_key == "battery_soc":
+            site_time = data.get("site_details", {}).get("updateTime")
+            realtime_time = data.get("realtime", {}).get("timestamp")
+            def _to_dt(val):
+                if val is None:
+                    return None
+                try:
+                    if isinstance(val, datetime):
+                        return val
+                    if isinstance(val, (int, float)):
+                        return _ms_to_datetime(val)
+                    # Если это строка
+                    return datetime.fromisoformat(str(val))
+                except Exception:
+                    return None
+            dt_site = _to_dt(site_time)
+            dt_real = _to_dt(realtime_time)
+            last_update = None
+            if dt_site and dt_real:
+                last_update = max(dt_site, dt_real)
+            elif dt_site:
+                last_update = dt_site
+            elif dt_real:
+                last_update = dt_real
+            if last_update:
+                attrs["last_update_time"] = last_update
 
         # -- Work mode: all mode options as attributes ---------------------
         if self._sensor_key == "work_mode":
