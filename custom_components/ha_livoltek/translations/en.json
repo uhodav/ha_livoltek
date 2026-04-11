@@ -89,444 +89,334 @@
   "entity": {
     "sensor": {
       "pv_power": {
-        "name": "PV Power",
-        "description": "Current solar panel output power"
+        "name": "PV Power"
       },
       "grid_power": {
-        "name": "Grid Power",
-        "description": "Current power exchange with the grid (positive = import, negative = export)"
+        "name": "Grid Power"
       },
       "load_power": {
-        "name": "Load Power",
-        "description": "Current household load consumption power"
+        "name": "Load Power"
       },
       "battery_power": {
-        "name": "Battery Power",
-        "description": "Current battery charge/discharge power"
+        "name": "Battery Power"
       },
       "battery_soc": {
-        "name": "Battery SoC",
-        "description": "Battery state of charge from power flow"
+        "name": "Battery SoC"
       },
       "charging_pile_power": {
-        "name": "EV Charger Power",
-        "description": "Current EV charger power consumption"
+        "name": "EV Charger Power"
       },
       "pv_status": {
-        "name": "PV Status",
-        "description": "Solar panel connection status"
+        "name": "PV Status"
       },
       "grid_status": {
-        "name": "Grid Status",
-        "description": "Grid connection status"
+        "name": "Grid Status"
       },
       "load_status": {
-        "name": "Load Status",
-        "description": "Load connection status"
+        "name": "Load Status"
       },
       "battery_status": {
-        "name": "Battery Status",
-        "description": "Battery connection status"
+        "name": "Battery Status"
       },
       "charging_pile_status": {
-        "name": "EV Charger Status",
-        "description": "EV charger connection status"
+        "name": "EV Charger Status"
       },
       "power_flow_timestamp": {
-        "name": "Power Flow Update Time",
-        "description": "Timestamp of the last power flow data update"
+        "name": "Power Flow Update Time"
       },
       "current_power": {
-        "name": "Current Power",
-        "description": "Current total power output of the site"
+        "name": "Current Power"
       },
       "daily_generation": {
-        "name": "Daily Generation",
-        "description": "Total energy generated today"
+        "name": "Daily Generation"
       },
       "monthly_generation": {
-        "name": "Monthly Generation",
-        "description": "Total energy generated this month"
+        "name": "Monthly Generation"
       },
       "yearly_generation": {
-        "name": "Yearly Generation",
-        "description": "Total energy generated this year"
+        "name": "Yearly Generation"
       },
       "lifetime_generation": {
-        "name": "Lifetime Generation",
-        "description": "Total energy generated over the lifetime of the system"
+        "name": "Lifetime Generation"
       },
       "online_devices": {
-        "name": "Online Devices",
-        "description": "Number of devices currently online"
+        "name": "Online Devices"
       },
       "overview_update_time": {
-        "name": "Overview Update Time",
-        "description": "Timestamp of the last site overview data update"
+        "name": "Overview Update Time"
       },
       "site_type": {
-        "name": "Power Station Type",
-        "description": "Type of the power station (grid-tied, solar storage, EV hub, etc.)"
+        "name": "Power Station Type"
       },
       "site_status": {
-        "name": "Site Communication Status",
-        "description": "Communication status of the site (all online, all offline, partial)"
+        "name": "Site Communication Status"
       },
       "pv_capacity": {
-        "name": "PV Capacity",
-        "description": "Installed PV capacity in kWp"
+        "name": "PV Capacity"
       },
       "has_alarm": {
-        "name": "Has Alarm",
-        "description": "Whether the site currently has active alarms"
+        "name": "Has Alarm"
       },
       "site_country": {
-        "name": "Site Country",
-        "description": "Country where the site is located"
+        "name": "Site Country"
       },
       "site_timezone": {
-        "name": "Site Timezone",
-        "description": "Timezone of the site"
+        "name": "Site Timezone"
       },
       "site_update_time": {
-        "name": "Site Update Time",
-        "description": "Timestamp of the last site details update"
+        "name": "Site Update Time"
       },
       "device_sn": {
-        "name": "Device Serial Number",
-        "description": "Inverter serial number"
+        "name": "Device Serial Number"
       },
       "product_type": {
-        "name": "Product Type",
-        "description": "Product type of the device"
+        "name": "Product Type"
       },
       "running_status": {
-        "name": "Running Status",
-        "description": "Current running status of the inverter (Normal, Standby, Fault, etc.)"
+        "name": "Running Status"
       },
       "firmware_version": {
-        "name": "Firmware Version",
-        "description": "Current firmware version of the device"
+        "name": "Firmware Version"
       },
       "device_type": {
-        "name": "Device Type",
-        "description": "Type of the device"
+        "name": "Device Type"
       },
       "device_manufacturer": {
-        "name": "Device Manufacturer",
-        "description": "Manufacturer of the device"
+        "name": "Device Manufacturer"
       },
       "device_update_time": {
-        "name": "Device Update Time",
-        "description": "Timestamp of the last device details update"
+        "name": "Device Update Time"
       },
       "work_mode": {
-        "name": "Work Mode",
-        "description": "Current inverter work mode (Back Up, Self Use, User Defined, Command Mode)"
+        "name": "Work Mode"
       },
       "bms_capacity": {
-        "name": "BMS Capacity",
-        "description": "Battery management system rated capacity in Ah"
+        "name": "BMS Capacity"
       },
       "current_soc": {
-        "name": "Current Battery SoC",
-        "description": "Current battery state of charge from storage info"
+        "name": "Current Battery SoC"
       },
       "battery_cycle_count": {
-        "name": "Battery Cycle Count",
-        "description": "Total number of battery charge/discharge cycles"
+        "name": "Battery Cycle Count"
       },
       "battery_sn": {
-        "name": "Battery Serial Number",
-        "description": "Serial number of the battery module"
+        "name": "Battery Serial Number"
       },
       "pv_produce_electric": {
-        "name": "Inverter Solar Generation",
-        "description": "Lifetime solar energy generated by this inverter"
+        "name": "Inverter Solar Generation"
       },
       "load_customer_electric": {
-        "name": "Load Consumption",
-        "description": "Lifetime energy consumed by the load"
+        "name": "Load Consumption"
       },
       "saving_co2": {
-        "name": "CO2 Reduced",
-        "description": "Total CO2 emissions reduced"
+        "name": "CO2 Reduced"
       },
       "saving_tree": {
-        "name": "Equivalent Trees Planted",
-        "description": "Equivalent number of trees planted"
+        "name": "Equivalent Trees Planted"
       },
       "saving_coal": {
-        "name": "Standard Coal Reduced",
-        "description": "Equivalent standard coal consumption reduced"
+        "name": "Standard Coal Reduced"
       },
       "alarm_total": {
-        "name": "Total Alarms",
-        "description": "Total number of active alarms"
+        "name": "Total Alarms"
       },
       "last_alarm_name": {
-        "name": "Last Alarm",
-        "description": "Name of the most recent alarm"
+        "name": "Last Alarm"
       },
       "last_alarm_time": {
-        "name": "Last Alarm Time",
-        "description": "Time of the most recent alarm"
+        "name": "Last Alarm Time"
       },
       "pv1_voltage": {
-        "name": "PV1 Voltage",
-        "description": "MPPT channel 1 voltage"
+        "name": "PV1 Voltage"
       },
       "pv1_current": {
-        "name": "PV1 Current",
-        "description": "MPPT channel 1 current"
+        "name": "PV1 Current"
       },
       "pv2_voltage": {
-        "name": "PV2 Voltage",
-        "description": "MPPT channel 2 voltage"
+        "name": "PV2 Voltage"
       },
       "pv2_current": {
-        "name": "PV2 Current",
-        "description": "MPPT channel 2 current"
+        "name": "PV2 Current"
       },
       "pv3_voltage": {
-        "name": "PV3 Voltage",
-        "description": "MPPT channel 3 voltage"
+        "name": "PV3 Voltage"
       },
       "pv3_current": {
-        "name": "PV3 Current",
-        "description": "MPPT channel 3 current"
+        "name": "PV3 Current"
       },
       "pv4_voltage": {
-        "name": "PV4 Voltage",
-        "description": "MPPT channel 4 voltage"
+        "name": "PV4 Voltage"
       },
       "pv4_current": {
-        "name": "PV4 Current",
-        "description": "MPPT channel 4 current"
+        "name": "PV4 Current"
       },
       "pv5_voltage": {
-        "name": "PV5 Voltage",
-        "description": "MPPT channel 5 voltage"
+        "name": "PV5 Voltage"
       },
       "pv5_current": {
-        "name": "PV5 Current",
-        "description": "MPPT channel 5 current"
+        "name": "PV5 Current"
       },
       "pv6_voltage": {
-        "name": "PV6 Voltage",
-        "description": "MPPT channel 6 voltage"
+        "name": "PV6 Voltage"
       },
       "pv6_current": {
-        "name": "PV6 Current",
-        "description": "MPPT channel 6 current"
+        "name": "PV6 Current"
       },
       "pv7_voltage": {
-        "name": "PV7 Voltage",
-        "description": "MPPT channel 7 voltage"
+        "name": "PV7 Voltage"
       },
       "pv7_current": {
-        "name": "PV7 Current",
-        "description": "MPPT channel 7 current"
+        "name": "PV7 Current"
       },
       "pv8_voltage": {
-        "name": "PV8 Voltage",
-        "description": "MPPT channel 8 voltage"
+        "name": "PV8 Voltage"
       },
       "pv8_current": {
-        "name": "PV8 Current",
-        "description": "MPPT channel 8 current"
+        "name": "PV8 Current"
       },
       "pv9_voltage": {
-        "name": "PV9 Voltage",
-        "description": "MPPT channel 9 voltage"
+        "name": "PV9 Voltage"
       },
       "pv9_current": {
-        "name": "PV9 Current",
-        "description": "MPPT channel 9 current"
+        "name": "PV9 Current"
       },
       "pv10_voltage": {
-        "name": "PV10 Voltage",
-        "description": "MPPT channel 10 voltage"
+        "name": "PV10 Voltage"
       },
       "pv10_current": {
-        "name": "PV10 Current",
-        "description": "MPPT channel 10 current"
+        "name": "PV10 Current"
       },
       "pv11_voltage": {
-        "name": "PV11 Voltage",
-        "description": "MPPT channel 11 voltage"
+        "name": "PV11 Voltage"
       },
       "pv11_current": {
-        "name": "PV11 Current",
-        "description": "MPPT channel 11 current"
+        "name": "PV11 Current"
       },
       "pv12_voltage": {
-        "name": "PV12 Voltage",
-        "description": "MPPT channel 12 voltage"
+        "name": "PV12 Voltage"
       },
       "pv12_current": {
-        "name": "PV12 Current",
-        "description": "MPPT channel 12 current"
+        "name": "PV12 Current"
       },
       "ac_phase_a_voltage": {
-        "name": "Phase A Voltage",
-        "description": "AC grid phase A (R) voltage"
+        "name": "Phase A Voltage"
       },
       "ac_phase_a_current": {
-        "name": "Phase A Current",
-        "description": "AC grid phase A (R) current"
+        "name": "Phase A Current"
       },
       "ac_phase_b_voltage": {
-        "name": "Phase B Voltage",
-        "description": "AC grid phase B (S) voltage"
+        "name": "Phase B Voltage"
       },
       "ac_phase_b_current": {
-        "name": "Phase B Current",
-        "description": "AC grid phase B (S) current"
+        "name": "Phase B Current"
       },
       "ac_phase_c_voltage": {
-        "name": "Phase C Voltage",
-        "description": "AC grid phase C (T) voltage"
+        "name": "Phase C Voltage"
       },
       "ac_phase_c_current": {
-        "name": "Phase C Current",
-        "description": "AC grid phase C (T) current"
+        "name": "Phase C Current"
       },
       "grid_active_power": {
-        "name": "Grid Active Power",
-        "description": "Real-time grid active power in watts"
+        "name": "Grid Active Power"
       },
       "grid_apparent_power": {
-        "name": "Grid Apparent Power",
-        "description": "Real-time grid apparent power in VA"
+        "name": "Grid Apparent Power"
       },
       "grid_frequency": {
-        "name": "Grid Frequency",
-        "description": "AC grid frequency"
+        "name": "Grid Frequency"
       },
       "battery_voltage": {
-        "name": "Battery Voltage",
-        "description": "Real-time battery voltage"
+        "name": "Battery Voltage"
       },
       "battery_current": {
-        "name": "Battery Current",
-        "description": "Real-time battery current"
+        "name": "Battery Current"
       },
       "battery_soc_realtime": {
-        "name": "Battery SoC (Realtime)",
-        "description": "Real-time battery state of charge"
+        "name": "Battery SoC (Realtime)"
       },
       "eps_voltage": {
-        "name": "EPS Voltage",
-        "description": "Emergency power supply output voltage"
+        "name": "EPS Voltage"
       },
       "eps_current": {
-        "name": "EPS Current",
-        "description": "Emergency power supply output current"
+        "name": "EPS Current"
       },
       "eps_frequency": {
-        "name": "EPS Frequency",
-        "description": "Emergency power supply output frequency"
+        "name": "EPS Frequency"
       },
       "realtime_timestamp": {
-        "name": "Realtime Data Update Time",
-        "description": "Timestamp of the last realtime technical data update"
+        "name": "Realtime Data Update Time"
       },
       "daily_pv_yield": {
-        "name": "Daily PV Yield",
-        "description": "Total solar energy generated today"
+        "name": "Daily PV Yield"
       },
       "daily_load_consumption": {
-        "name": "Daily Load Consumption",
-        "description": "Total load energy consumed today"
+        "name": "Daily Load Consumption"
       },
       "daily_grid_import": {
-        "name": "Daily Grid Import",
-        "description": "Total energy imported from the grid today"
+        "name": "Daily Grid Import"
       },
       "daily_grid_export": {
-        "name": "Daily Grid Export",
-        "description": "Total energy exported to the grid today"
+        "name": "Daily Grid Export"
       },
       "daily_battery_charge": {
-        "name": "Daily Battery Charge",
-        "description": "Total energy charged into battery today"
+        "name": "Daily Battery Charge"
       },
       "daily_battery_discharge": {
-        "name": "Daily Battery Discharge",
-        "description": "Total energy discharged from battery today"
+        "name": "Daily Battery Discharge"
       },
       "daily_eps_output": {
-        "name": "Daily EPS Output",
-        "description": "Total emergency power supply output energy today"
+        "name": "Daily EPS Output"
       },
       "daily_diesel_energy": {
-        "name": "Daily Diesel Generation",
-        "description": "Total diesel generator energy output today"
+        "name": "Daily Diesel Generation"
       },
       "daily_ev_consumption": {
-        "name": "Daily EV Consumption",
-        "description": "Total EV charging pile energy consumption today"
+        "name": "Daily EV Consumption"
       },
       "installer_name": {
-        "name": "Installer Name",
-        "description": "Name of the site installer company"
+        "name": "Installer Name"
       },
       "installer_org_code": {
-        "name": "Installer Org Code",
-        "description": "Organization code of the site installer"
+        "name": "Installer Org Code"
       },
       "owner_name": {
-        "name": "Owner Name",
-        "description": "Name of the site owner"
+        "name": "Owner Name"
       },
       "owner_email": {
-        "name": "Owner Email",
-        "description": "Email address of the site owner"
+        "name": "Owner Email"
       },
       "owner_login_account": {
-        "name": "Owner Account",
-        "description": "Login account of the site owner"
+        "name": "Owner Account"
       },
       "owner_country": {
-        "name": "Owner Country",
-        "description": "Country of the site owner"
+        "name": "Owner Country"
       },
       "device_communication_status": {
-        "name": "Communication Status",
-        "description": "Device communication status (Online/Offline)"
+        "name": "Communication Status"
       },
       "device_running_status_basic": {
-        "name": "Running Status (Basic)",
-        "description": "Running status from device basic data"
+        "name": "Running Status (Basic)"
       },
       "device_registration_time": {
-        "name": "Registration Time",
-        "description": "Device registration time on the platform"
+        "name": "Registration Time"
       },
       "device_power_gen_day": {
-        "name": "Daily Power Generation",
-        "description": "Device power generation today"
+        "name": "Daily Power Generation"
       },
       "device_grid_export_day": {
-        "name": "Daily Grid Export (Device)",
-        "description": "Energy exported to the grid by this device today"
+        "name": "Daily Grid Export (Device)"
       },
       "device_grid_import_day": {
-        "name": "Daily Grid Import (Device)",
-        "description": "Energy imported from the grid by this device today"
+        "name": "Daily Grid Import (Device)"
       },
       "device_charge_day": {
-        "name": "Daily Charge (Device)",
-        "description": "Battery charge energy by this device today"
+        "name": "Daily Charge (Device)"
       },
       "device_discharge_day": {
-        "name": "Daily Discharge (Device)",
-        "description": "Battery discharge energy by this device today"
+        "name": "Daily Discharge (Device)"
       },
       "device_load_day": {
-        "name": "Daily Load (Device)",
-        "description": "Load energy by this device today"
+        "name": "Daily Load (Device)"
       }
     },
     "button": {
