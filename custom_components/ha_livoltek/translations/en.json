@@ -1,10 +1,11 @@
 {
   "title": "Livoltek system",
+  "livoltek_portal_url": "https://www.livoltek-portal.com/",
   "config": {
     "step": {
       "user": {
         "title": "Step 1/5: Livoltek API Credentials",
-        "description": "Enter your Livoltek API credentials.\n\n**How to get credentials:**\n1. Go to [livoltek-portal.com](https://www.livoltek-portal.com/) and log in\n2. Open **My Profile** (top right corner)\n3. Click **Generate Token** to create your User Token\n4. Click **Secure ID** to get your Security ID (secuid) and API Key",
+        "description": "Enter your Livoltek API credentials.\n\n**How to get credentials:**\n1. Go to {livoltek_portal_url} and log in\n2. Open My Profile (top right corner)\n3. Click Generate Token to create your User Token\n4. Click Secure ID to get your Security ID (secuid) and API Key",
         "data": {
           "server_type": "Server",
           "secuid": "Security ID (secuid)",
