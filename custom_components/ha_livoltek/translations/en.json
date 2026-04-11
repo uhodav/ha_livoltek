@@ -52,6 +52,7 @@
       "invalid_device": "Invalid device selection.",
       "already_configured": "This device is already configured.",
       "unknown": "An unknown error occurred.",
+      "bad_request": "Bad request (400). Please check your device selection and credentials.",
       "no_groups_selected": "At least one data group must be selected."
     }
   },

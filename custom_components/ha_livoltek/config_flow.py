@@ -89,9 +89,13 @@ class LivoltekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             except LivoltekApiError as err:
                 _LOGGER.error("Livoltek API error: %s", err)
                 errors["base"] = "cannot_connect"
-            except Exception:
-                _LOGGER.exception("Unexpected error during Livoltek login")
-                errors["base"] = "unknown"
+            except Exception as err:
+                import traceback
+                print("[LIVOLTEK DEBUG] Unexpected error during Livoltek login:")
+                traceback.print_exc()
+                print(f"[LIVOLTEK DEBUG] Exception: {err}")
+                print(f"[LIVOLTEK DEBUG] Request params: server_type={self._server_type}, secuid={self._secuid}, key={self._key}, token={self._token}")
+                errors["base"] = f"unknown: {err}"
             finally:
                 await api.close()
 
@@ -270,16 +274,6 @@ class LivoltekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             for g in ALL_GROUPS
         ]
 
-        always_enabled = ["power_flow"]
-        other_groups = [g for g in ALL_GROUPS if g != "power_flow"]
-        group_options = [
-            selector.SelectOptionDict(
-                value=g,
-                label=GROUP_LABELS.get(g, g),
-                disabled=(g == "power_flow")
-            )
-            for g in ALL_GROUPS
-        ]
         return self.async_show_form(
             step_id="groups",
             data_schema=vol.Schema(
@@ -387,9 +381,12 @@ class LivoltekOptionsFlow(config_entries.OptionsFlow):
                 errors["base"] = "invalid_auth"
             except LivoltekApiError:
                 errors["base"] = "cannot_connect"
-            except Exception:
-                _LOGGER.exception("Unexpected error during options login")
-                errors["base"] = "unknown"
+            except Exception as err:
+                import traceback
+                print("[LIVOLTEK DEBUG] Unexpected error during options login:")
+                traceback.print_exc()
+                print(f"[LIVOLTEK DEBUG] Exception: {err}")
+                errors["base"] = f"unknown: {err}"
             finally:
                 await api.close()
 
