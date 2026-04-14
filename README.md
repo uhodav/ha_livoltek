@@ -160,7 +160,7 @@ data:
 ## 🖼️ Livoltek Power Card (Lovelace)
 A custom Lovelace card for Home Assistant to visualize Livoltek inverter and BESS power flow in a schematic, animated style.
 
-[![Power Card Preview](custom_components/ha_livoltek/frontend/images/preview.png)]
+![Power Card Preview](custom_components/ha_livoltek/frontend/images/preview.png)
 
 ### Features
 - Schematic power flow: PV, Grid, Battery, Load, Inverter
