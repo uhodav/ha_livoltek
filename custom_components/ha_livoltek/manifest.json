@@ -3,10 +3,10 @@
   "name": "Livoltek system",
   "codeowners": ["@uhodav"],
   "config_flow": true,
+  "dependencies": ["http"],
   "documentation": "https://github.com/uhodav/ha_livoltek/blob/main/README.md",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/uhodav/ha_livoltek/issues",
   "requirements": [],
-  "version": "1.0.0",
-  "dependencies": ["http"]
+  "version": "1.0.0"
 }
