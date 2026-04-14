@@ -5,6 +5,8 @@ import time
 from datetime import timedelta
 
 import voluptuous as vol
+from pathlib import Path
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import device_registry as dr
@@ -46,15 +48,30 @@ from .const import (
     SERVERS,
 )
 
+DOMAIN = "ha_livoltek"
 _LOGGER = logging.getLogger(__name__)
 
 BASE_PLATFORMS = ["sensor"]
 CONTROL_PLATFORMS = ["button", "select"]
 
+FRONTEND_KEY = "_frontend_registered"
+FRONTEND_URL = "/ha_livoltek/livoltek-power-card.js"
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Livoltek from a config entry."""
     hass.data.setdefault(DOMAIN, {})
+
+    if not hass.data[DOMAIN].get(FRONTEND_KEY):
+        frontend_dir = Path(__file__).parent / "frontend"
+        files = [
+            ("livoltek-power-card.js", "/ha_livoltek/livoltek-power-card.js"),
+            ("livoltek-power-card-editor.js", "/ha_livoltek/livoltek-power-card-editor.js"),
+        ]
+        await hass.http.async_register_static_paths([
+            StaticPathConfig(url, str(frontend_dir / fname), cache_headers=False)
+            for fname, url in files
+        ])
+        hass.data[DOMAIN][FRONTEND_KEY] = True
 
     server_type = entry.data[CONF_SERVER_TYPE]
     base_url = SERVERS[server_type]

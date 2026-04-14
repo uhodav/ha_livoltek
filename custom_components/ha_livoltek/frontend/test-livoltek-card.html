@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Livoltek Card Test</title>
+  <script type="module" src="./livoltek-power-card.js"></script>
+  <style>
+    body { background: #222; color: #fff; font-family: sans-serif; }
+    .test-container { min-width: 500px; max-width: 800px; margin: 40px auto; background: #333; border-radius: 16px; box-shadow: 0 2px 16px #0008; padding: 32px; }
+  </style>
+</head>
+<body>
+  <div class="test-container">
+    <livoltek-power-card id="testcard"></livoltek-power-card>
+  </div>
+  <script>
+    const testStates = {
+      'sensor.livoltek_ХХХХХХХХ_pv_power': {
+        state: '0', attributes: { unit_of_measurement: 'W' }
+      },
+      'sensor.livoltek_ХХХХХХХХ_grid_power': {
+        state: '0', attributes: { unit_of_measurement: 'W' }
+      },
+      'sensor.livoltek_ХХХХХХХХ_battery_power': {
+        state: '0', attributes: { unit_of_measurement: 'W' }
+      },
+      'sensor.livoltek_ХХХХХХХХ_battery_soc': {
+        state: '075', attributes: { unit_of_measurement: '%' }
+      },
+      'sensor.livoltek_ХХХХХХХХ_load_power': {
+        state: '0', attributes: { unit_of_measurement: 'W' }
+      },
+    };
+    // Эмуляция hass
+    const hass = {
+      states: testStates,
+      locale: { language: 'en' },
+    };
+    // Конфиг карточки
+    const config = {
+      title: 'Power Flow',
+      pv_power: 'sensor.livoltek_ХХХХХХХХ_pv_power',
+      grid_power: 'sensor.livoltek_ХХХХХХХХ_grid_power',
+      battery_power: 'sensor.livoltek_ХХХХХХХХ_battery_power',
+      battery_soc: 'sensor.livoltek_ХХХХХХХХ_battery_soc',
+      load_power: 'sensor.livoltek_ХХХХХХХХ_load_power',
+    };
+    // Ждём, пока custom element будет определён
+    window.addEventListener('DOMContentLoaded', () => {
+      customElements.whenDefined('livoltek-power-card').then(() => {
+        const card = document.getElementById('testcard');
+        card.setConfig(config);
+        card.hass = hass;
+      });
+    });
+  </script>
+</body>
+</html>

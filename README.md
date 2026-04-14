@@ -156,6 +156,30 @@ data:
       chargingDays: [0, 1, 2, 3, 4]
 ```
 
+
+## 🖼️ Livoltek Power Card (Lovelace)
+A custom Lovelace card for Home Assistant to visualize Livoltek inverter and BESS power flow in a schematic, animated style.
+
+[![Power Card Preview](custom_components/ha_livoltek/frontend/images/preview.png)]
+
+### Features
+- Schematic power flow: PV, Grid, Battery, Load, Inverter
+- Animated SVG lines with moving dots for each flow
+- Multi-language labels (EN/UA)
+- Responsive design
+- Visual editor for easy configuration in Lovelace UI
+
+### Installation
+1. Copy both files to your Home Assistant `www` directory (preserving folders):
+   - `custom_components/ha_livoltek/frontend/livoltek-power-card.js`
+   - `custom_components/ha_livoltek/frontend/livoltek-power-card-editor.js`
+2. Add both as resources in Home Assistant (Settings → Dashboards → Resources):
+   - `/ha_livoltek/livoltek-power-card.js`
+   - `/ha_livoltek/livoltek-power-card-editor.js`
+3. Add the card via UI: "Add Card" → "Custom: Livoltek Power Card". Use the visual editor to select your sensors (only `sensor.livoltek_...` will be shown).
+
+See full details and usage: [README-power-card.md](custom_components/ha_livoltek/frontend/README-power-card.md)
+
 ---
 
 # Livoltek system для Home Assistant
@@ -304,6 +328,27 @@ data:
       endMin: 0
       chargingDays: [0, 1, 2, 3, 4]
 ```
+
+## 🖼️ Livoltek Power Card (Lovelace) [UA]
+Кастомна картка Lovelace для Home Assistant для візуалізації потоків енергії Livoltek у вигляді схеми з анімацією.
+
+![Power Card Preview](custom_components/ha_livoltek/frontend/images/preview.png)
+
+### Можливості
+- Схематичний потік енергії: PV, Мережа, Акумулятор, Навантаження, Інвертор
+- Анімовані SVG-лінії з рухомими точками
+- Багатомовні підписи (UA/EN)
+- Адаптивний дизайн
+- Візуальний редактор для налаштування прямо в Lovelace
+
+### Встановлення
+1. Скопіюйте обидва файли у директорію `www` Home Assistant (зберігаючи структуру папок):
+   - `custom_components/ha_livoltek/frontend/livoltek-power-card.js`
+   - `custom_components/ha_livoltek/frontend/livoltek-power-card-editor.js`
+2. Додайте обидва файли як ресурси (Налаштування → Панелі → Ресурси):
+   - `/ha_livoltek/livoltek-power-card.js`
+   - `/ha_livoltek/livoltek-power-card-editor.js`
+3. Додайте картку через UI: "Додати картку" → "Custom: Livoltek Power Card". Виберіть сенсори через візуальний редактор (будуть показані лише `sensor.livoltek_...`).
 
 ---
 
