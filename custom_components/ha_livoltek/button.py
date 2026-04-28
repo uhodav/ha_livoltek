@@ -108,6 +108,8 @@ class LivoltekControlButton(ButtonEntity):
         uid = f"livoltek_{site_id}_{device_sn}_{button_key}"
 
         self._attr_unique_id = uid
+        self._attr_suggested_object_id = f"livoltek_{site_id}_{device_sn}_{button_key}"
+        self._attr_device_sn = device_sn
         self._attr_translation_key = button_key
         self._attr_has_entity_name = True
         self._attr_icon = icon

@@ -4,18 +4,18 @@ const colorActive = '#00b7ee';
 const colorInactive = '#e0e5e9ff';
 
 class LivoltekCard extends HTMLElement {
-      static getConfigElement() {
-        return document.createElement('livoltek-power-card-editor');
-      }
-    _renderBlock({type, icon, values, svgId, sensorNum, svgStyle, extraStyle = '', isActive = true, isBack = true}) {
+    static getConfigElement() {
+      return document.createElement('livoltek-power-card-editor');
+    }
+    _renderBlock({type, icon, values, svgId, connected, svgStyle, extraStyle = '', isActive = true, isBack = true}) {
       return `
-        <div class="powerflow-block ${type}" style="position:relative;${extraStyle}">
-          <div class="icon">${icon}</div>
+        <div class="li_powerflow-block li_${type}" style="position:relative;${extraStyle}">
+          <div class="li_icon">${icon}</div>
           ${values.map(v => v.text ? `
-          <div class="value" style="${v.style}">
+          <div class="li_value" style="${v.style}">
             <span style="${v.spanStyle}">${v.text}</span>
           </div>` : '').join('')}
-          ${this._svgLine(svgId, sensorNum, svgStyle, !!isActive, !!isBack)}
+          ${this._svgLine(svgId, connected, svgStyle, !!isActive, !!isBack)}
         </div>
       `;
     }
@@ -51,12 +51,17 @@ class LivoltekCard extends HTMLElement {
   static getStubConfig() {
     return {
       type: `custom:${CARD_TAG}`,
-      title: "Livoltek",
-      pv_power: "sensor.livoltek_XXXXXXXX_pv_power",
-      grid_power: "sensor.livoltek_XXXXXXXX_grid_power",
-      battery_power: "sensor.livoltek_XXXXXXXX_battery_power",
-      battery_soc: "sensor.livoltek_XXXXXXXX_battery_soc",
-      load_power: "sensor.livoltek_XXXXXXXX_load_power",
+      title: "",
+      pv_power: "",
+      grid_power: "",
+      battery_power: "",
+      battery_soc: "",
+      load_power: "",
+      show_units_pv_power: true,
+      show_units_grid_power: true,
+      show_units_battery_power: true,
+      show_units_battery_soc: true,
+      show_units_load_power: true,
     };
   }
 
@@ -64,7 +69,7 @@ class LivoltekCard extends HTMLElement {
     return entityId ? this._hass.states[entityId] : undefined;
   }
 
-  _formatState(stateObj, fractionDigits = null) {
+  _formatState(stateObj, fractionDigits = null, showUnit = true) {
     if (!stateObj || ["unknown", "unavailable", null, undefined].includes(stateObj.state)) {
       return "—";
     }
@@ -74,20 +79,36 @@ class LivoltekCard extends HTMLElement {
       value = numeric.toFixed(fractionDigits);
     }
     const unit = stateObj.attributes.unit_of_measurement || "";
-    return unit ? `${value} ${unit}` : `${value}`;
+    return showUnit && unit ? `${value} ${unit}` : `${value}`;
   }
 
   _metric(label, value, icon, accent = false) {
     return `
-      <div class="metric ${accent ? "metric--accent" : ""}">
-        <div class="metric__icon">${icon}</div>
-        <div class="metric__body">
-          <div class="metric__label">${label}</div>
-          <div class="metric__value">${value}</div>
+      <div class="li_metric ${accent ? "li_metric--accent" : ""}">
+        <div class="li_metric__icon">${icon}</div>
+        <div class="li_metric__body">
+          <div class="li_metric__label">${label}</div>
+          <div class="li_metric__value">${value}</div>
         </div>
       </div>
     `;
   }
+
+  _isActiveState(stateObj) {
+    if (!stateObj || [null, undefined, 'unknown', 'unavailable'].includes(stateObj.state)) return false;
+    const val = stateObj.state;
+    if (typeof val === 'boolean') return val;
+    if (typeof val === 'number') return val !== 0;
+    if (typeof val === 'string') {
+      const v = val.toLowerCase();
+      if (v === 'on' || v === 'true' || v === 'yes') return true;
+      if (v === 'off' || v === 'false' || v === 'no') return false;
+      const num = Number(val);
+      if (!isNaN(num)) return num !== 0;
+    }
+    return false;
+  }
+
 
   _render() {
     if (!this._config) return;
@@ -97,28 +118,49 @@ class LivoltekCard extends HTMLElement {
     const soc = this._stateObj(this._config.battery_soc);
     const load = this._stateObj(this._config.load_power);
 
-    const pvVal = this._formatState(pv, 1).replace(' W', ' kW').replace('—', '0 kW');
-    const gridVal = this._formatState(grid, 1).replace(' W', ' kW').replace('—', '0 kW');
-    const batteryVal = this._formatState(battery, 1).replace(' W', ' kW').replace('—', '0 kW');
-    const socVal = this._formatState(soc, 0).replace('—', '0').replace('%', '') + '%';
-    const loadVal = this._formatState(load, 1).replace(' W', ' kW').replace('—', '0 kW');
+    const pvActiveSensor = this._stateObj(this._config.active_sensor_pv || this._config.pv_power);
+    const batteryActiveSensor = this._stateObj(this._config.active_sensor_battery || this._config.battery_power);
+    const gridActiveSensor = this._stateObj(this._config.active_sensor_grid || this._config.grid_power);
+    const loadActiveSensor = this._stateObj(this._config.active_sensor_load || this._config.load_power);
 
-    const svgIcon = (icon, sensorValue) => {
-      const color = sensorValue !== 0 ? colorActive : colorInactive;
-      if (!sensorValue) {
+    const pvConnectedSensor = this._stateObj(this._config.connected_sensor_pv || this._config.pv_power);
+    const batteryConnectedSensor = this._stateObj(this._config.connected_sensor_battery || this._config.battery_power);
+    const gridConnectedSensor = this._stateObj(this._config.connected_sensor_grid || this._config.grid_power);
+    const loadConnectedSensor = this._stateObj(this._config.connected_sensor_load || this._config.load_power);
+
+    const showUnitsPv = this._config.show_units_pv_power !== false;
+    const showUnitsGrid = this._config.show_units_grid_power !== false;
+    const showUnitsBattery = this._config.show_units_battery_power !== false;
+    const showUnitsSoc = this._config.show_units_battery_soc !== false;
+    const showUnitsLoad = this._config.show_units_load_power !== false;
+
+    const pvVal = this._formatState(pv, 1, showUnitsPv).replace('—', '0');
+    const gridVal = this._formatState(grid, 1, showUnitsGrid).replace('—', '0');
+    const batteryVal = this._formatState(battery, 1, showUnitsBattery).replace('—', '0');
+    const socVal = this._formatState(soc, 0, showUnitsSoc).replace('—', '0');
+    const loadVal = this._formatState(load, 1, showUnitsLoad).replace('—', '0');
+
+    const isConnected = (stateObj) => {
+      if (!stateObj || [null, undefined, 'unknown', 'unavailable'].includes(stateObj.state)) return false;
+      return this._isActiveState(stateObj);
+    };
+
+    const svgIcon = (icon, connected) => {
+      const color = connected ? colorActive : colorInactive;
+      if (!connected) {
         icon = icon.replace(/<circle[^>]*fill="url\(#A\)"[^>]*>/g, '');
       }
-      icon = icon.replace(/fill="(?!url\(#A\))[^"]*"/g, `fill="${color}"`);
+      icon = icon.replace(/fill="(?!url\(#A\))[^\"]*"/g, `fill="${color}"`);
       return icon;
     }
 
-    const svgLine = (id, sensorValue, style = "") => {
-      const color = sensorValue !== 0 ? colorActive : colorInactive;
-      const isBack = sensorValue > 0 ? 'keyPoints="1;0" keyTimes="0;1"' : '';
+    const svgLine = (id, connected, style = "", active = true, isBack = false) => {
+      const color = connected ? colorActive : colorInactive;
+      const isBackAttr = isBack ? 'keyPoints="1;0" keyTimes="0;1"' : '';
       return `
         <svg style="${style}; position:absolute; z-index: 2; display: block;" viewBox="0 0 175 40">
-          <path d="M.888 5.374h25.178l37.945 29.856h112.771" stroke="${color}" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" id="${id}""></path>
-          ${sensorValue !== 0 ? `<circle r="5" fill="${color}"><animateMotion dur="2s" ${isBack} repeatCount="indefinite"><mpath xlink:href="#${id}"></mpath></animateMotion></circle>` : ""}
+          <path d="M.888 5.374h25.178l37.945 29.856h112.771" stroke="${color}" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" id="${id}"></path>
+          ${active ? `<circle r="5" fill="${color}"><animateMotion dur="2s" ${isBackAttr} repeatCount="indefinite"><mpath xlink:href="#${id}"></mpath></animateMotion></circle>` : ""}
         </svg>
       `;
     }
@@ -129,28 +171,40 @@ class LivoltekCard extends HTMLElement {
     const gridNum = Number(grid && !isNaN(Number(grid.state)) ? grid.state : 0);
     const loadNum = Number(load && !isNaN(Number(load.state)) ? load.state : 0);
 
+    const pvActive = this._isActiveState(pvActiveSensor);
+    const batteryActive = this._isActiveState(batteryActiveSensor);
+    const gridActive = this._isActiveState(gridActiveSensor);
+    const loadActive = this._isActiveState(loadActiveSensor);
+
+    const pvConnected = isConnected(pvConnectedSensor);
+    const batteryConnected = isConnected(batteryConnectedSensor);
+    const gridConnected = isConnected(gridConnectedSensor);
+    const loadConnected = isConnected(loadConnectedSensor);
+
     this._card.innerHTML = `
-      <div class="powerflow-card">
-        <div class="powerflow-header">${this._config.title}</div>
-        <div class="powerflow-body">
-          <div class="powerflow-left">
+      <div class="li_powerflow-card">
+        ${this._config.title ? `
+          <div class="li_powerflow-header">${this._config.title}</div>
+        ` : ''}
+        <div class="li_powerflow-body">
+          <div class="li_powerflow-left">
             ${this._renderBlock({
               type: 'pv',
-              icon: svgIcon(this._icons.pv, pvNum),
+              icon: svgIcon(this._icons.pv, pvConnected),
               values: [{
                 style: 'position: absolute; left: calc(var(--icon-width) + 2px); top: calc((var(--icon-width) / 2) - 24px);',
                 spanStyle: 'color:#0382cc; white-space: nowrap;',
                 text: pvNum ? pvVal : ''
               }],
               svgId: 'pv-inverter',
-              sensorNum: pvNum,
+              connected: pvConnected,
               svgStyle: 'transform: rotateX(180deg) rotateY(180deg); top: calc(var(--icon-width) / 2); left: var(--icon-width); right: 0;',
-              isActive: !!pvNum,
+              isActive: pvActive,
               isBack: pvNum < 0
             })}
             ${this._renderBlock({
               type: 'battery',
-              icon: svgIcon(this._icons.battery, batteryNum || socNum),
+              icon: svgIcon(this._icons.battery, batteryConnected),
               values: [
                 {
                   style: 'position: absolute; left: calc(var(--icon-width) + 2px); top: calc((var(--icon-width) / 2 - 28px));',
@@ -164,45 +218,45 @@ class LivoltekCard extends HTMLElement {
                 }
               ],
               svgId: 'battery-inverter',
-              sensorNum: batteryNum || socNum,
+              connected: batteryConnected,
               svgStyle: 'left: 0; right: 0; transform: rotateY(180deg);bottom: calc(var(--icon-width) / 2);left: var(--icon-width);',
               extraStyle: 'align-items: start;',
-              isActive: !!batteryNum,
+              isActive: batteryActive,
               isBack: batteryNum > 0
             })}
           </div>
-          <div class="powerflow-center">
+          <div class="li_powerflow-center">
             ${this._icons.inverter}
           </div>
-          <div class="powerflow-right">
+          <div class="li_powerflow-right">
             ${this._renderBlock({
               type: 'grid',
-              icon: svgIcon(this._icons.grid, gridNum),
+              icon: svgIcon(this._icons.grid, gridConnected),
               values: [{
                 style: 'position: absolute; right: calc(var(--icon-width) + 2px); top: calc((var(--icon-width) / 2) - 24px);',
                 spanStyle: 'color:#0382cc; white-space: nowrap;',
                 text: gridNum ? gridVal : ''
               }],
               svgId: 'grid-inverter',
-              sensorNum: gridNum,
+              connected: gridConnected,
               svgStyle: 'right: var(--icon-width);top: calc(var(--icon-width) / 2);left: 0; transform: rotateX(180deg);',
               extraStyle: 'display: flex; justify-content: flex-end; align-items: flex-start;',
-              isActive: !!gridNum,
+              isActive: gridActive,
               isBack: gridNum < 0
             })}
             ${this._renderBlock({
               type: 'load',
-              icon: svgIcon(this._icons.load, loadNum),
+              icon: svgIcon(this._icons.load, loadConnected),
               values: [{
                 style: 'position: absolute; right: calc(var(--icon-width) + 2px); top: calc((var(--icon-width) / 2));',
                 spanStyle: 'color:#0382cc; white-space: nowrap;',
                 text: loadNum ? loadVal : ''
               }],
               svgId: 'load-inverter',
-              sensorNum: loadNum,
+              connected: loadConnected,
               svgStyle: 'right: var(--icon-width); bottom: calc(var(--icon-width) / 2);',
               extraStyle: 'display: flex; justify-content: flex-end; align-items: flex-start;',
-              isActive: !!loadNum,
+              isActive: loadActive,
               isBack: loadNum < 0
             })}
           </div>
@@ -250,20 +304,20 @@ class LivoltekCard extends HTMLElement {
   _styles() {
     return `
       <style>
-        .powerflow-card {
+        .li_powerflow-card {
           --icon-width: 4vw;
           background: var(--ha-card-background, #fff);
           margin: 0 auto;
           border-radius: 10px;
           box-shadow: 0 2px 8px #0001;
         }
-        .powerflow-header {
+        .li_powerflow-header {
           font-size: 22px;
           font-weight: 700;
           padding: 16px 0 0 16px;
           color: var(--primary-text-color, #222);
         }
-        .powerflow-body {
+        .li_powerflow-body {
           display: grid;
           grid-template-columns: 
           minmax(calc(var(--icon-width) + 42px), calc(var(--icon-width) + 105px)) 
@@ -272,69 +326,55 @@ class LivoltekCard extends HTMLElement {
           padding: 13px;
           justify-content: center;
         }
-        .powerflow-left, .powerflow-right {
+        .li_powerflow-left, .li_powerflow-right {
           z-index: 2;
         }
-        .powerflow-left {
+        .li_powerflow-left {
           text-align: left;
         }
-        .powerflow-right {
+        .li_powerflow-right {
           text-align: right;
         }
 
-        .powerflow-block {
-          .value {
-            font-size: 14px;
-            color: #0382cc;
-            z-index: 3;
-            background: var(--ha-card-background, #fff);
-          }
-          .icon {
-            z-index: 2;
-            width: var(--icon-width);
-            height: var(--icon-width);
-          }
-          &.battery,
-          &.load {
-            margin-top: 8px;
-          }
+        .li_powerflow-block {
+          /* BEM: .li_value, .li_icon, .li_battery, .li_load */
         }
-          .powerflow-block .value {
-            font-size: 14px;
-            color: #0382cc;
-            z-index: 3;
-            background: var(--ha-card-background, #fff);
-          }
-          .powerflow-block .icon {
-            z-index: 2;
-            width: var(--icon-width);
-            height: var(--icon-width);
-          }
-          .powerflow-block.battery,
-          .powerflow-block.load {
-            margin-top: 8px;
-          }
-        .powerflow-block.battery .value {
+        .li_powerflow-block .li_value {
+          font-size: 14px;
+          color: #0382cc;
+          z-index: 3;
+          background: var(--ha-card-background, #fff);
+        }
+        .li_powerflow-block .li_icon {
+          z-index: 2;
+          width: var(--icon-width);
+          height: var(--icon-width);
+        }
+        .li_powerflow-block.li_battery,
+        .li_powerflow-block.li_load {
+          margin-top: 8px;
+        }
+        .li_powerflow-block.li_battery .li_value {
           font-size: 14px;
         }
-        .powerflow-center {
+        .li_powerflow-center {
           display: flex;
           justify-content: center;
           align-items: center;
           width: calc(var(--icon-width) + 14px);
         }
         @media (max-width: 900px) {
-          .powerflow-card {
+          .li_powerflow-card {
             --icon-width: 41px;
             width: calc(var(--icon-width) + 248px);
           }
-          .powerflow-body {
+          .li_powerflow-body {
             grid-template-columns: 1fr auto 1fr;
           }
-          .powerflow-header {
+          .li_powerflow-header {
             font-size: var(--ha-font-size-xl, 14px);
           }
-          .powerflow-center {
+          .li_powerflow-center {
             width: calc(var(--icon-width) + 14px);
           }
         }
@@ -350,7 +390,15 @@ if (!customElements.get(CARD_TAG)) {
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: CARD_TAG,
-  name: "Livoltek Card",
+  name: "Livoltek Power Card",
   description: "Summary card for Livoltek sensors",
   preview: true,
 });
+
+console.groupCollapsed(
+  '%c LIVOLTEK-POWER-CARD %c v1.0.0 ',
+  'color: white; background: #488fc2; font-weight: 700;',
+  'color: #488fc2; background: white; font-weight: 700;'
+);
+console.log("Readme:", "https://github.com/uhodav/ha_livoltek"),
+console.groupEnd();

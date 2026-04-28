@@ -1,12 +1,26 @@
 """API client for Livoltek ESS API."""
+import asyncio
+import base64
+import binascii
 import json as json_mod
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import aiohttp
 
+from .const import (
+    SERVER_INTERNATIONAL,
+    TOKEN_REFRESH_BUFFER,
+)
+
 _LOGGER = logging.getLogger(__name__)
+
+_SUCCESS_APP_CODE = "operate.success"
+_TRANSPORT_OK_MARKERS = frozenset({"200", "SUCCESS"})
+_AUTH_FAIL_CODES = frozenset({"login.invalid", "token.invalid", "user.token.invalid"})
+_STALE_TOKEN_CODES = frozenset({"token.expiried", "token.expired"})
 
 
 class LivoltekApiError(Exception):
@@ -15,6 +29,68 @@ class LivoltekApiError(Exception):
 
 class LivoltekAuthError(LivoltekApiError):
     """Authentication error."""
+
+
+class LivoltekConnectionError(LivoltekApiError):
+    """Connection/transport error."""
+
+
+def _msg_text(payload: dict[str, Any]) -> str | None:
+    """Extract human-readable message from payload."""
+    text = payload.get("message") or payload.get("msg")
+    return text if isinstance(text, str) else None
+
+
+def _normalise_response(payload: Any) -> dict[str, Any]:
+    """Collapse all three Livoltek response shapes into one canonical form.
+
+    Shape 1 (login): {"code": "200", "data": {"msgCode": "operate.success", "data": "<jwt>"}}
+    Shape 2 (data):  {"code": "200", "data": {...actual data...}}
+    Shape 3 (flat):  {"msgCode": "operate.success", "data": {...}}
+    """
+    if not isinstance(payload, dict):
+        return {"msgCode": None, "message": None, "data": payload}
+
+    if "msgCode" in payload:
+        return payload
+
+    code = str(payload.get("code") or "")
+    msg = (_msg_text(payload) or "").upper()
+    transport_ok = code in _TRANSPORT_OK_MARKERS or msg in _TRANSPORT_OK_MARKERS
+
+    if not transport_ok:
+        return {
+            "msgCode": code,
+            "message": _msg_text(payload),
+            "data": payload.get("data"),
+        }
+
+    inner = payload.get("data")
+
+    if isinstance(inner, dict) and "msgCode" in inner:
+        return inner
+
+    return {
+        "msgCode": _SUCCESS_APP_CODE,
+        "message": _msg_text(payload),
+        "data": inner,
+    }
+
+
+def _is_success(payload: dict[str, Any]) -> bool:
+    """Check if normalized response indicates success."""
+    return payload.get("msgCode") == _SUCCESS_APP_CODE
+
+def _decode_token_expiry(token: str) -> int | None:
+    """Decode JWT exp claim without signature verification."""
+    try:
+        payload_part = token.split(".")[1]
+        padded = payload_part + "=" * (4 - len(payload_part) % 4)
+        payload = json_mod.loads(base64.b64decode(padded))
+        return int(payload["exp"])
+    except (IndexError, KeyError, ValueError, binascii.Error, Exception):
+        _LOGGER.debug("Could not decode JWT expiry, will use reactive refresh")
+        return None
 
 
 class LivoltekApi:
@@ -32,26 +108,40 @@ class LivoltekApi:
         key: str,
         user_token: str,
         auth_token: str | None = None,
+        session: aiohttp.ClientSession | None = None,
+        server_type: str = SERVER_INTERNATIONAL,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._secuid = secuid
         self._key = key
         self._user_token = user_token
         self._auth_token = auth_token
-        self._session: aiohttp.ClientSession | None = None
+        self._token_expiry: int | None = None
+        self._token_lock = asyncio.Lock()
+        self._session = session  # HA shared session or None
+        self._owns_session = session is None
+        self._server_type = server_type
 
     @property
     def auth_token(self) -> str | None:
         """Return the current JWT auth token (from login)."""
         return self._auth_token
 
+    @property
+    def token_expiry(self) -> int | None:
+        """Return the token expiry timestamp."""
+        return self._token_expiry
+
     async def _get_session(self) -> aiohttp.ClientSession:
-        if self._session is None or self._session.closed:
+        if self._session is not None and not self._session.closed:
+            return self._session
+        if self._owns_session:
             self._session = aiohttp.ClientSession()
         return self._session
 
     async def close(self) -> None:
-        if self._session and not self._session.closed:
+        """Close the session only if we own it."""
+        if self._owns_session and self._session and not self._session.closed:
             await self._session.close()
 
     async def login(self) -> str:
@@ -78,28 +168,9 @@ class LivoltekApi:
                 json=payload,
                 headers={"Content-Type": "application/json"},
                 timeout=aiohttp.ClientTimeout(total=30),
-                ssl=False,
             ) as resp:
                 raw = await resp.text()
-                data = json_mod.loads(raw)
-                if str(data.get("code")) != "200":
-                    raise LivoltekAuthError(
-                        f"Login failed: code={data.get('code')} message={data.get('message')} body={raw[:500]}"
-                    )
-                inner = data.get("data")
-
-                if isinstance(inner, dict):
-                    token = inner.get("data")
-                elif isinstance(inner, str):
-                    token = inner
-                else:
-                    token = None
-                if not token:
-                    raise LivoltekAuthError(
-                        f"No token in login response: data_type={type(inner).__name__} data={str(inner)[:300]} full_body={raw[:500]}"
-                    )
-                self._auth_token = token
-                return token
+                raw_data = json_mod.loads(raw)
         except LivoltekApiError:
             raise
         except aiohttp.ClientError as err:
@@ -107,13 +178,73 @@ class LivoltekApi:
         except Exception as err:
             raise LivoltekApiError(f"Unexpected error during login: {err}") from err
 
-    async def _request(self, method: str, path: str, params: dict | None = None, json_body: dict | None = None) -> Any:
-        """Make an authenticated API request."""
+        if not isinstance(raw_data, dict):
+            raise LivoltekAuthError(f"Unexpected login response: {str(raw_data)[:500]}")
+
+        body = _normalise_response(raw_data)
+
+        if not _is_success(body):
+            msg_code = body.get("msgCode")
+            msg = _msg_text(body)
+            raise LivoltekAuthError(
+                f"Login failed: msgCode={msg_code!r} message={msg!r}"
+            )
+
+        token = body.get("data")
+        if not token or not isinstance(token, str):
+            raise LivoltekAuthError(
+                f"No token in login response: body={str(body)[:500]}"
+            )
+
+        self._auth_token = token
+        self._token_expiry = _decode_token_expiry(token)
+        if self._token_expiry:
+            _LOGGER.debug(
+                "Login successful, token expires at %s",
+                datetime.fromtimestamp(self._token_expiry, tz=timezone.utc).isoformat(),
+            )
+        else:
+            _LOGGER.debug("Login successful, token expiry unknown")
+        return token
+
+    async def ensure_token(self) -> None:
+        """Proactively refresh token if it's about to expire."""
+        async with self._token_lock:
+            now = int(time.time())
+            buffer = int(TOKEN_REFRESH_BUFFER.total_seconds())
+
+            if (
+                self._auth_token
+                and self._token_expiry
+                and self._token_expiry > now + buffer
+            ):
+                return  # Token still valid
+
+            if self._auth_token and self._token_expiry is None:
+                # Can't determine expiry — keep current token
+                # Will fall back to reactive refresh on 401
+                return
+
+            _LOGGER.debug("Token expired or about to expire, refreshing...")
+            await self.login()
+
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        params: dict | None = None,
+        json_body: dict | None = None,
+        *,
+        retry_on_auth: bool = True,
+    ) -> Any:
+        """Make an authenticated API request with 3-shape response normalization."""
+        await self.ensure_token()
+
         if not self._auth_token:
             await self.login()
 
         url = f"{self._base_url}{path}"
-        # userToken = user-provided token, Authorization header = JWT from login
+
         query_params = {"userToken": self._user_token, "userType": "0"}
         if params:
             query_params.update(params)
@@ -125,42 +256,66 @@ class LivoltekApi:
             async with session.request(
                 method,
                 url,
-                params=query_params,
+                params=query_params if query_params else None,
                 json=json_body,
                 headers=headers,
                 timeout=aiohttp.ClientTimeout(total=30),
-                ssl=False,
             ) as resp:
+                if resp.status == 401 and retry_on_auth:
+                    _LOGGER.debug("Got 401 from %s, refreshing token", url)
+                    self._token_expiry = 0
+                    await self.ensure_token()
+                    return await self._request(
+                        method, path, params, json_body,
+                        retry_on_auth=False,
+                    )
+                if resp.status >= 400:
+                    body_text = await resp.text()
+                    raise LivoltekApiError(
+                        f"{method} {url} -> HTTP {resp.status}: {body_text[:500]}"
+                    )
                 raw = await resp.text()
                 data = json_mod.loads(raw)
-
-                # If code signals auth error or message says login required, re-login and retry
-                code = str(data.get("code"))
-                msg = str(data.get("message", "")).lower()
-                if code in ("401", "403", "None") or "login" in msg or "please login" in msg:
-                    await self.login()
-                    headers["Authorization"] = self._auth_token
-                    async with session.request(
-                        method,
-                        url,
-                        params=query_params,
-                        json=json_body,
-                        headers=headers,
-                        timeout=aiohttp.ClientTimeout(total=30),
-                        ssl=False,
-                    ) as retry_resp:
-                        raw_retry = await retry_resp.text()
-                        data = json_mod.loads(raw_retry)
-
-                if str(data.get("code")) != "200":
-                    raise LivoltekApiError(
-                        f"API error {data.get('code')}: {data.get('message', 'Unknown')}"
-                    )
-                return data.get("data")
         except LivoltekApiError:
             raise
+        except asyncio.TimeoutError as err:
+            raise LivoltekConnectionError(f"Timeout on {method} {url}") from err
         except aiohttp.ClientError as err:
-            raise LivoltekApiError(f"Connection error: {err}") from err
+            raise LivoltekConnectionError(f"Connection error: {err}") from err
+
+        if not isinstance(data, dict):
+            raise LivoltekApiError(f"Unexpected response from {url}: {str(data)[:300]}")
+
+        body = _normalise_response(data)
+
+        if not _is_success(body):
+            msg_code = body.get("msgCode", "")
+            msg = _msg_text(body) or ""
+
+            # Check for stale token
+            looks_stale = (
+                msg_code in _STALE_TOKEN_CODES
+                or msg.lower() == "please login"
+                or str(data.get("code")) in ("401", "403")
+            )
+            if looks_stale and retry_on_auth:
+                _LOGGER.debug("Stale token from %s, refreshing and retrying", url)
+                self._token_expiry = 0
+                await self.ensure_token()
+                return await self._request(
+                    method, path, params, json_body,
+                    retry_on_auth=False,
+                )
+
+            # Check for auth failure
+            if msg_code in _AUTH_FAIL_CODES:
+                raise LivoltekAuthError(f"{url}: msgCode={msg_code!r} message={msg!r}")
+
+            raise LivoltekApiError(
+                f"API error from {url}: msgCode={msg_code!r} message={msg!r}"
+            )
+
+        return body.get("data")
 
     async def get_sites(self, page: int = 1, size: int = 100) -> dict:
         """Get list of sites."""
@@ -359,7 +514,7 @@ class LivoltekApi:
 
     async def get_site_owner(self, site_id: str) -> dict:
         """Get site owner (end user) information."""
-        return await self._request("GET", f"/hess/api/site/{site_id}/customer")
+        return await self._request("GET", f"/hess/api/site/{site_id}/siteOwner")
 
     async def get_device_basic_data(self, sn: str) -> dict:
         """Get device basic data (registration, daily counters, status)."""

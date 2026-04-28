@@ -7,6 +7,7 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.helpers import selector
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
     ALL_GROUPS,
@@ -79,7 +80,8 @@ class LivoltekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._token = user_input[CONF_TOKEN]
 
             base_url = SERVERS[self._server_type]
-            api = LivoltekApi(base_url, self._secuid, self._key, self._token)
+            session = async_get_clientsession(self.hass)
+            api = LivoltekApi(base_url, self._secuid, self._key, self._token, session=session, server_type=self._server_type)
             try:
                 self._auth_token = await api.login()
                 return await self.async_step_site()
@@ -148,7 +150,8 @@ class LivoltekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # Fetch sites list
         if not self._sites:
             base_url = SERVERS[self._server_type]
-            api = LivoltekApi(base_url, self._secuid, self._key, self._token, self._auth_token)
+            session = async_get_clientsession(self.hass)
+            api = LivoltekApi(base_url, self._secuid, self._key, self._token, self._auth_token, session=session, server_type=self._server_type)
             try:
                 data = await api.get_sites()
                 self._sites = data.get("list", []) if data else []
@@ -217,7 +220,8 @@ class LivoltekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # Fetch devices list
         if not self._devices:
             base_url = SERVERS[self._server_type]
-            api = LivoltekApi(base_url, self._secuid, self._key, self._token, self._auth_token)
+            session = async_get_clientsession(self.hass)
+            api = LivoltekApi(base_url, self._secuid, self._key, self._token, self._auth_token, session=session, server_type=self._server_type)
             try:
                 data = await api.get_devices(self._site_id)
                 self._devices = data.get("list", []) if data else []
@@ -365,7 +369,8 @@ class LivoltekOptionsFlow(config_entries.OptionsFlow):
 
             # Validate credentials by attempting login
             base_url = SERVERS[server_type]
-            api = LivoltekApi(base_url, secuid, key, token)
+            session = async_get_clientsession(self.hass)
+            api = LivoltekApi(base_url, secuid, key, token, session=session, server_type=server_type)
             try:
                 auth_token = await api.login()
                 self._new_data = {

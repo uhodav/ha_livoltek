@@ -1,7 +1,6 @@
 """The Livoltek integration."""
 import json
 import logging
-import time
 from datetime import timedelta
 
 import voluptuous as vol
@@ -10,7 +9,7 @@ from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import LivoltekApi, LivoltekApiError
 from .const import (
@@ -30,7 +29,6 @@ from .const import (
     CONF_WORKMODE,
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
-    ENERGY_REPORT_INTERVAL,
     GROUP_ALARMS,
     GROUP_DAILY_ENERGY,
     GROUP_DEVICE_BASIC,
@@ -46,6 +44,10 @@ from .const import (
     GROUP_STORAGE,
     MIN_UPDATE_INTERVAL,
     SERVERS,
+)
+from .coordinator import (
+    LivoltekMediumCoordinator,
+    LivoltekSlowCoordinator,
 )
 
 DOMAIN = "ha_livoltek"
@@ -90,7 +92,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Enabled endpoint groups (default: all for backward compatibility)
     enabled_groups = set(entry.data.get(CONF_ENABLED_GROUPS, ALL_GROUPS))
 
-    api = LivoltekApi(base_url, secuid, key, user_token, auth_token)
+    api = LivoltekApi(
+        base_url, secuid, key, user_token, auth_token,
+        session=async_get_clientsession(hass),
+        server_type=server_type,
+    )
 
     update_interval = int(
         entry.options.get(CONF_UPDATE_INTERVAL, entry.data.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL))
@@ -98,189 +104,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if update_interval < MIN_UPDATE_INTERVAL:
         update_interval = MIN_UPDATE_INTERVAL
 
-    # Throttle state for daily energy report (max 1x/hour)
-    energy_state: dict = {"last_fetch": 0.0, "cached": {}}
-
-    async def async_update_data() -> dict:
-        """Fetch data from Livoltek API."""
-        try:
-            result: dict = {}
-
-            # ── Power flow ───────────────────────────────────────────
-            if GROUP_POWER_FLOW in enabled_groups:
-                result["power_flow"] = await api.get_current_power_flow(site_id) or {}
-            else:
-                result["power_flow"] = {}
-
-            # ── Overview ─────────────────────────────────────────────
-            if GROUP_OVERVIEW in enabled_groups:
-                result["overview"] = await api.get_site_overview(site_id) or {}
-            else:
-                result["overview"] = {}
-
-            # ── Storage (ESS) ────────────────────────────────────────
-            if GROUP_STORAGE in enabled_groups:
-                try:
-                    result["storage"] = await api.get_storage_info(site_id) or {}
-                except LivoltekApiError:
-                    _LOGGER.error("Storage info not available for site %s", site_id)
-                    result["storage"] = {}
-            else:
-                result["storage"] = {}
-
-            # ── Device electricity ───────────────────────────────────
-            if GROUP_DEVICE_ELECTRICITY in enabled_groups and device_id:
-                try:
-                    result["device_electricity"] = await api.get_device_real_electricity(device_id) or {}
-                except LivoltekApiError:
-                    _LOGGER.error("Device electricity not available for device %s", device_id)
-                    result["device_electricity"] = {}
-            else:
-                result["device_electricity"] = {}
-
-            # ── Social contribution ──────────────────────────────────
-            if GROUP_SOCIAL in enabled_groups:
-                try:
-                    result["social"] = await api.get_social_contribution(site_id) or {}
-                except LivoltekApiError:
-                    _LOGGER.error("Social contribution not available for site %s", site_id)
-                    result["social"] = {}
-            else:
-                result["social"] = {}
-
-            # ── Alarms ───────────────────────────────────────────────
-            if GROUP_ALARMS in enabled_groups:
-                try:
-                    alarms_resp = await api.get_device_alarms(site_id, device_sn)
-                    if isinstance(alarms_resp, dict):
-                        records = alarms_resp.get("list") or alarms_resp.get("records") or []
-                        total = alarms_resp.get("count") or alarms_resp.get("total") or len(records)
-                        result["alarms"] = {"records": records, "total": total}
-                    elif isinstance(alarms_resp, list):
-                        result["alarms"] = {"records": alarms_resp, "total": len(alarms_resp)}
-                    else:
-                        result["alarms"] = {"records": [], "total": 0}
-                except LivoltekApiError:
-                    _LOGGER.error("Alarms not available for device %s", device_sn)
-                    result["alarms"] = {}
-            else:
-                result["alarms"] = {}
-
-            # ── Site details ─────────────────────────────────────────
-            if GROUP_SITE_DETAILS in enabled_groups:
-                try:
-                    result["site_details"] = await api.get_site_details(site_id) or {}
-                except LivoltekApiError:
-                    _LOGGER.error("Site details not available for site %s", site_id)
-                    result["site_details"] = {}
-            else:
-                result["site_details"] = {}
-
-            # ── Device details ───────────────────────────────────────
-            if GROUP_DEVICE_DETAILS in enabled_groups:
-                try:
-                    result["device_details"] = await api.get_device_details(site_id, device_sn) or {}
-                except LivoltekApiError:
-                    _LOGGER.error("Device details not available for %s", device_sn)
-                    result["device_details"] = {}
-            else:
-                result["device_details"] = {}
-
-            # ── Realtime technical parameters ────────────────────────
-            if GROUP_REALTIME in enabled_groups:
-                try:
-                    result["realtime"] = await api.get_device_realtime(site_id, device_sn) or {}
-                except LivoltekApiError:
-                    _LOGGER.error("Realtime data not available for %s", device_sn)
-                    result["realtime"] = {}
-            else:
-                result["realtime"] = {}
-
-            # ── Daily energy report (throttled: 1x/hour) ────────────
-            if GROUP_DAILY_ENERGY in enabled_groups and device_id:
-                now_ts = time.monotonic()
-                if now_ts - energy_state["last_fetch"] >= ENERGY_REPORT_INTERVAL:
-                    try:
-                        daily = await api.get_daily_energy_report(device_id)
-                        energy_state["cached"] = daily or {}
-                        energy_state["last_fetch"] = now_ts
-                    except LivoltekApiError:
-                        _LOGGER.error("Daily energy report not available for device %s", device_id)
-                result["daily_energy"] = energy_state["cached"]
-            else:
-                result["daily_energy"] = {}
-
-            # ── Site installer ───────────────────────────────────────
-            if GROUP_SITE_INSTALLER in enabled_groups:
-                try:
-                    raw_inst = await api.get_site_installer(site_id)
-                    if isinstance(raw_inst, list):
-                        result["site_installer"] = raw_inst[0] if raw_inst else {}
-                    else:
-                        result["site_installer"] = raw_inst or {}
-                except LivoltekApiError:
-                    _LOGGER.error("Site installer not available for site %s", site_id)
-                    result["site_installer"] = {}
-            else:
-                result["site_installer"] = {}
-
-            # ── Site owner ───────────────────────────────────────────
-            if GROUP_SITE_OWNER in enabled_groups:
-                try:
-                    raw_owner = await api.get_site_owner(site_id)
-                    if isinstance(raw_owner, list):
-                        result["site_owner"] = raw_owner[0] if raw_owner else {}
-                    else:
-                        result["site_owner"] = raw_owner or {}
-                except LivoltekApiError:
-                    _LOGGER.error("Site owner not available for site %s", site_id)
-                    result["site_owner"] = {}
-            else:
-                result["site_owner"] = {}
-
-            # ── Device basic data ────────────────────────────────────
-            if GROUP_DEVICE_BASIC in enabled_groups:
-                try:
-                    raw_basic = await api.get_device_basic_data(device_sn)
-                    # API may return a list; extract first element
-                    if isinstance(raw_basic, list):
-                        result["device_basic"] = raw_basic[0] if raw_basic else {}
-                    else:
-                        result["device_basic"] = raw_basic or {}
-                except LivoltekApiError:
-                    _LOGGER.error("Device basic data not available for %s", device_sn)
-                    result["device_basic"] = {}
-            else:
-                result["device_basic"] = {}
-
-            # ── Device description (BESS capabilities) ───────────────
-            device_description = None
-            if has_control:
-                try:
-                    device_description = await api.get_device_description(device_sn)
-                except LivoltekApiError as err:
-                    _LOGGER.error("Device description not available for %s: %s", device_sn, err)
-            result["device_description"] = device_description or {}
-
-            # ── Persist refreshed auth token ─────────────────────────
-            if api.auth_token and api.auth_token != entry.data.get(CONF_AUTH_TOKEN):
-                new_data = {**entry.data, CONF_AUTH_TOKEN: api.auth_token}
-                hass.config_entries.async_update_entry(entry, data=new_data)
-
-            return result
-        except LivoltekApiError as err:
-            raise UpdateFailed(f"Error fetching data from Livoltek API: {err}") from err
-
-    coordinator = DataUpdateCoordinator(
-        hass,
-        _LOGGER,
-        name=f"Livoltek {site_id}",
-        update_method=async_update_data,
+    coord_medium = LivoltekMediumCoordinator(
+        hass, entry, api,
         update_interval=timedelta(minutes=update_interval),
+        has_control=has_control,
     )
+    coord_slow = LivoltekSlowCoordinator(hass, entry, api)
 
     hass.data[DOMAIN][entry.entry_id] = {
-        "coordinator": coordinator,
+        "coordinator": coord_medium,
+        "coordinator_slow": coord_slow,
         "api": api,
         "config": entry.data,
         "has_control": has_control,
@@ -289,10 +122,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "current_workmode": entry.data.get(CONF_WORKMODE),
     }
 
-    # Keep coordinator alive
-    coordinator.async_add_listener(lambda: None)
+    # Keep coordinators alive
+    coord_medium.async_add_listener(lambda: None)
+    coord_slow.async_add_listener(lambda: None)
 
-    await coordinator.async_config_entry_first_refresh()
+    # First refresh — medium is mandatory, slow is optional
+    await coord_medium.async_config_entry_first_refresh()
+
+    # Slow coordinator can fail without blocking setup
+    if GROUP_DAILY_ENERGY in enabled_groups:
+        try:
+            await coord_slow.async_config_entry_first_refresh()
+        except Exception:  # noqa: BLE001
+            _LOGGER.warning("Slow coordinator first refresh failed, will retry")
 
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
 
@@ -406,12 +248,9 @@ def _register_services(hass: HomeAssistant) -> None:
 
 
 async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Apply updated options to a running coordinator."""
+    """Apply updated options to running coordinators."""
     runtime = hass.data.get(DOMAIN, {}).get(entry.entry_id)
     if not runtime:
-        return
-    coordinator = runtime.get("coordinator")
-    if coordinator is None:
         return
 
     new_interval = int(
@@ -419,12 +258,21 @@ async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> Non
     )
     if new_interval < MIN_UPDATE_INTERVAL:
         new_interval = MIN_UPDATE_INTERVAL
-    coordinator.update_interval = timedelta(minutes=new_interval)
+
+    # Only the medium coordinator uses user-configurable interval
+    coord_medium = runtime.get("coordinator")
+    if coord_medium is not None:
+        coord_medium.update_interval = timedelta(minutes=new_interval)
+        coord_medium._normal_interval = timedelta(minutes=new_interval)
 
     # Clean up devices for groups that are no longer enabled
     _cleanup_orphan_devices(hass, entry)
 
-    await coordinator.async_request_refresh()
+    # Refresh all coordinators
+    for key in ("coordinator", "coordinator_fast", "coordinator_slow"):
+        coord = runtime.get(key)
+        if coord is not None:
+            await coord.async_request_refresh()
 
 
 def _cleanup_orphan_devices(hass: HomeAssistant, entry: ConfigEntry) -> None:

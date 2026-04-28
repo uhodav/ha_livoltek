@@ -1,4 +1,4 @@
-"""Sensor platform for Livoltek integration."""
+﻿"""Sensor platform for Livoltek integration."""
 import json
 import logging
 from datetime import datetime, timezone
@@ -17,6 +17,7 @@ from homeassistant.const import (
     UnitOfMass,
     UnitOfPower,
 )
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -32,6 +33,7 @@ from .const import (
     DOMAIN,
     ENERGY_STATUS_MAP,
     GRID_STATUS_MAP,
+    GROUP_DAILY_ENERGY,
     GROUP_LABELS,
     GROUP_LABELS_UK,
     LOAD_STATUS_MAP,
@@ -80,9 +82,7 @@ def _get_group_label(hass, group: str) -> str:
     """Return group label in HA configured language."""
     lang = getattr(hass.config, "language", "en") if hass else "en"
     labels = GROUP_LABELS_UK if lang and lang.startswith("uk") else GROUP_LABELS
-    label = labels.get(group, group)
-    # Strip emoji prefix for device name (keep it short)
-    return label
+    return labels.get(group, group)
 
 
 def _build_device_info(
@@ -287,11 +287,37 @@ _TIMESTAMP_KEYS = {
     "device_update_time", "realtime_timestamp",
 }
 
+_DISABLED_BY_DEFAULT_KEYS = _TIMESTAMP_KEYS
+
+_NO_HISTORY_KEYS = _TIMESTAMP_KEYS | {
+    "device_sn", "product_type", "firmware_version", "device_type",
+    "device_manufacturer", "device_registration_time",
+    "site_type", "site_country", "site_timezone", "pv_capacity",
+    "installer_name", "installer_org_code",
+    "owner_name", "owner_email", "owner_login_account", "owner_country",
+    "battery_sn",
+
+    "pv_status", "grid_status", "load_status", "battery_status",
+    "charging_pile_status", "running_status", "device_running_status_basic",
+    "site_status", "device_communication_status", "has_alarm",
+    "online_devices",
+
+    "alarm_total", "last_alarm_name", "last_alarm_time",
+
+    "bms_firmware_version", "battery_module_count", "battery_cell_count",
+    "battery_max_cell_voltage_id", "battery_min_cell_voltage_id",
+    "battery_max_cell_temp_id",
+    "inverter_grid_charge_flag", "inverter_work_mode_setting",
+}
+
+_SLOW_COORDINATOR_SOURCES = frozenset({"daily_energy"})
+
 
 async def async_setup_entry(hass, entry, async_add_entities):
     """Set up Livoltek sensors from a config entry."""
     runtime = hass.data[DOMAIN][entry.entry_id]
-    coordinator = runtime["coordinator"]
+    coord_medium = runtime["coordinator"]
+    coord_slow = runtime.get("coordinator_slow")
     entry_data = entry.data
     enabled_groups = runtime.get("enabled_groups", set())
 
@@ -301,6 +327,12 @@ async def async_setup_entry(hass, entry, async_add_entities):
         # Skip sensors whose data_source group is not enabled
         if data_source not in enabled_groups:
             continue
+
+        if data_source in _SLOW_COORDINATOR_SOURCES and coord_slow is not None:
+            coordinator = coord_slow
+        else:
+            coordinator = coord_medium
+
         sensors.append(
             LivoltekSensor(
                 coordinator=coordinator,
@@ -343,12 +375,15 @@ class LivoltekSensor(CoordinatorEntity, SensorEntity):
         self._sensor_key = sensor_key
         self._data_source = data_source
         self._data_field = data_field
+        self._last_valid_value = None
 
         site_id = entry_data.get(CONF_SITE_ID, "")
         device_sn = entry_data.get(CONF_DEVICE_SN, "")
         uid = f"livoltek_{site_id}_{device_sn}_{sensor_key}"
 
         self._attr_unique_id = uid
+        self._attr_suggested_object_id = f"livoltek_{site_id}_{device_sn}_{sensor_key}"
+        self._attr_device_sn = device_sn
         self._attr_translation_key = sensor_key
         self._attr_has_entity_name = True
         self._attr_icon = icon
@@ -361,6 +396,19 @@ class LivoltekSensor(CoordinatorEntity, SensorEntity):
             self._attr_native_unit_of_measurement = unit
         if entity_category is not None:
             self._attr_entity_category = entity_category
+        if sensor_key in _DISABLED_BY_DEFAULT_KEYS:
+            self._attr_entity_registry_enabled_default = False
+
+    async def async_added_to_hass(self) -> None:
+        """Set recorder options when entity is registered."""
+        await super().async_added_to_hass()
+        if self._sensor_key in _NO_HISTORY_KEYS:
+            registry = er.async_get(self.hass)
+            entry = registry.async_get(self.entity_id)
+            if entry and entry.options.get("recorder", {}).get("should_record") is not False:
+                registry.async_update_entity_options(
+                    self.entity_id, "recorder", {"should_record": False},
+                )
 
     @property
     def device_info(self):
@@ -372,6 +420,15 @@ class LivoltekSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self):
+        value = self._compute_value()
+        if value is not None:
+            self._last_valid_value = value
+            return value
+        # Keep last known value when API returns None/empty
+        return self._last_valid_value
+
+    def _compute_value(self):
+        """Compute the raw sensor value from coordinator data."""
         if self._sensor_key == "battery_soc":
             data = self.coordinator.data or {}
             soc_realtime = (data.get("realtime") or {}).get("batterySoc")

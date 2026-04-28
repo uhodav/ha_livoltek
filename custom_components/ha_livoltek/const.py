@@ -351,3 +351,25 @@ MQTT_TOPIC_WORK_STATUS = "ev_work_status_topic/{sn}"
 MIN_UPDATE_INTERVAL = 5  # realtime data interval is 5 min on server side
 # Device power report & site day energy: max 1 request per hour per device/site
 ENERGY_REPORT_MIN_INTERVAL = 3600  # seconds
+from datetime import timedelta
+
+PRIVATE_API_SERVERS = {
+    SERVER_INTERNATIONAL: "https://evs.livoltek-portal.com",
+    SERVER_EUROPEAN: "https://evs.livoltek-portal.com",
+}
+
+SCAN_INTERVAL_FAST = timedelta(seconds=60)
+SCAN_INTERVAL_MEDIUM = timedelta(minutes=5)
+SCAN_INTERVAL_SLOW = timedelta(hours=1)
+STARTUP_JITTER_MAX = 30
+
+
+BACKOFF_INTERVALS = [
+    timedelta(seconds=60),
+    timedelta(seconds=120),
+    timedelta(seconds=300),
+    timedelta(seconds=600),
+]
+
+
+TOKEN_REFRESH_BUFFER = timedelta(minutes=30)
