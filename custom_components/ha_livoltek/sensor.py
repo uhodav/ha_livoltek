@@ -1,4 +1,4 @@
-﻿"""Sensor platform for Livoltek integration."""
+"""Sensor platform for Livoltek integration."""
 import json
 import logging
 from datetime import datetime, timezone
