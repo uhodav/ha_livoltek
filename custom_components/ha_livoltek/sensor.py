@@ -132,16 +132,17 @@ def _storage_latest(storage: dict, field: str) -> float | None:
 
 
 def _battery_soc(data: dict) -> float | None:
-    """Battery SoC: realtime BMS, storage, storage history, then power flow.
+    """Battery SoC: storage, power flow, storage history, then realtime.
 
-    curPowerflow energySoc is known to stay null for days while /ESS still reports SoC.
+    curPowerflow energySoc is known to stay null for days while /ESS still reports SoC;
+    realtime is a 5-minute history that can hold a zero record.
     """
     storage = data.get("storage") or {}
     for value in (
-        _safe_float((data.get("realtime") or {}).get("batterySoc")),
-        _safe_float(storage.get("currentSoc")),
-        _storage_latest(storage, "energySoc"),
+        _safe_float(_get_field(storage, "currentSoc")),
         _safe_float((data.get("power_flow") or {}).get("energySoc")),
+        _storage_latest(storage, "energySoc"),
+        _safe_float((data.get("realtime") or {}).get("batterySoc")),
     ):
         if value is not None:
             return value

@@ -361,10 +361,7 @@ class LivoltekCard extends HTMLElement {
       <style>
         .li_powerflow-card {
           --icon-width: 4vw;
-          background: var(--ha-card-background, #fff);
           margin: 0 auto;
-          border-radius: 10px;
-          box-shadow: 0 2px 8px #0001;
         }
         .li_powerflow-header {
           font-size: 22px;
@@ -398,7 +395,7 @@ class LivoltekCard extends HTMLElement {
           font-size: 14px;
           color: #0382cc;
           z-index: 3;
-          background: var(--ha-card-background, #fff);
+          background: var(--ha-card-background, var(--card-background-color, #fff));
         }
         .li_powerflow-block .li_icon {
           z-index: 2;
@@ -453,7 +450,7 @@ if (!window.customCards.some(card => card.type === CARD_TAG)) {
 }
 
 console.groupCollapsed(
-  '%c LIVOLTEK-POWER-CARD %c v1.1.0 ',
+  '%c LIVOLTEK-POWER-CARD %c v1.2.5 ',
   'color: white; background: #488fc2; font-weight: 700;',
   'color: #488fc2; background: white; font-weight: 700;'
 );
