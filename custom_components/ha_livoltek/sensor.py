@@ -102,10 +102,10 @@ def _get_field(data: dict, field: str):
 
 
 def _battery_charging(power_flow: dict) -> bool | None:
-    """Charging direction from energyStatus; the sign of energyPower differs between inverters.
+    """Charging direction from energyStatus, falling back to the sign of energyPower.
 
     Observed statuses: charging, disCharging, idel and Importing (charging from the grid).
-    Without a usable status: negative power = charging.
+    energyPower: positive = charging, negative = discharging.
     """
     status = str(power_flow.get("energyStatus") or "").lower()
     if "discharg" in status:
@@ -113,7 +113,7 @@ def _battery_charging(power_flow: dict) -> bool | None:
     if "charg" in status or "import" in status:
         return True
     power = _safe_float(power_flow.get("energyPower"))
-    return None if power is None else power < 0
+    return None if power is None else power > 0
 
 
 def _storage_latest(storage: dict, field: str) -> float | None:

@@ -2,7 +2,8 @@ const CARD_TAG = "livoltek-power-card";
 const EDITOR_TAG = "livoltek-power-card-editor";
 const EDITOR_URL = "/ha_livoltek/livoltek-power-card-editor.js";
 const SENSOR_KEYS = ['pv_power', 'grid_power', 'battery_power', 'battery_soc', 'load_power'];
-// Flow direction comes from these when set; the sign of power differs between inverters
+// Flow direction comes from these when set, otherwise from the sign:
+// battery power > 0 = charging, grid power > 0 = import
 const STATUS_KEYS = ['battery_status', 'grid_status'];
 
 const colorActive = '#00b7ee';
@@ -219,7 +220,7 @@ class LivoltekCard extends HTMLElement {
     // "Importing" is reported while the battery charges from the grid
     const batteryBack = batteryStatus.includes('discharg') ? true
       : batteryStatus.includes('charg') || batteryStatus.includes('import') ? false
-      : batteryNum > 0;
+      : batteryNum < 0;
     const gridStatus = this._statusText(this._config.grid_status);
     const gridBack = gridStatus.includes('import') ? true
       : gridStatus.includes('export') ? false
