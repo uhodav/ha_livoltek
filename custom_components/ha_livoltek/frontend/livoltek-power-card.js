@@ -1,11 +1,24 @@
 const CARD_TAG = "livoltek-power-card";
+const EDITOR_TAG = "livoltek-power-card-editor";
+const EDITOR_URL = "/ha_livoltek/livoltek-power-card-editor.js";
+const SENSOR_KEYS = ['pv_power', 'grid_power', 'battery_power', 'battery_soc', 'load_power'];
 
 const colorActive = '#00b7ee';
 const colorInactive = '#e0e5e9ff';
 
+const escapeHtml = (value) => String(value ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
+
 class LivoltekCard extends HTMLElement {
-    static getConfigElement() {
-      return document.createElement('livoltek-power-card-editor');
+    static async getConfigElement() {
+      if (!customElements.get(EDITOR_TAG)) {
+        await import(EDITOR_URL);
+      }
+      return document.createElement(EDITOR_TAG);
     }
     _renderBlock({type, icon, values, svgId, connected, svgStyle, extraStyle = '', isActive = true, isBack = true}) {
       return `
@@ -31,16 +44,16 @@ class LivoltekCard extends HTMLElement {
       `;
     }
   setConfig(config) {
+    if (!config || typeof config !== 'object') {
+      throw new Error('Invalid configuration');
+    }
     this._config = { ...config };
+    this._renderKey = null;
+    if (this._hass) this._render();
   }
 
   set hass(hass) {
     this._hass = hass;
-    if (!this._card) {
-      this._card = document.createElement("ha-card");
-      this._card.style.overflow = "hidden";
-      this.appendChild(this._card);
-    }
     this._render();
   }
 
@@ -48,8 +61,8 @@ class LivoltekCard extends HTMLElement {
     return 4;
   }
 
-  static getStubConfig() {
-    return {
+  static getStubConfig(hass) {
+    const config = {
       type: `custom:${CARD_TAG}`,
       title: "",
       pv_power: "",
@@ -63,6 +76,36 @@ class LivoltekCard extends HTMLElement {
       show_units_battery_soc: true,
       show_units_load_power: true,
     };
+    for (const [entityId, entry] of Object.entries(hass?.entities || {})) {
+      if (entry.platform !== 'ha_livoltek' || !entityId.startsWith('sensor.')) continue;
+      const key = SENSOR_KEYS.includes(entry.translation_key) ? entry.translation_key : null;
+      if (key && !config[key]) config[key] = entityId;
+    }
+    return config;
+  }
+
+  _ensureCard() {
+    if (this._card) return;
+    if (!this.shadowRoot) this.attachShadow({ mode: 'open' });
+    this._card = document.createElement("ha-card");
+    this._card.style.overflow = "hidden";
+    this.shadowRoot.appendChild(this._card);
+  }
+
+  _entityIds() {
+    const c = this._config;
+    return [
+      c.pv_power, c.grid_power, c.battery_power, c.battery_soc, c.load_power,
+      c.active_sensor_pv, c.active_sensor_battery, c.active_sensor_grid, c.active_sensor_load,
+      c.connected_sensor_pv, c.connected_sensor_battery, c.connected_sensor_grid, c.connected_sensor_load,
+    ];
+  }
+
+  _stateChanged() {
+    const states = this._entityIds().map(id => (id ? this._hass.states[id] : undefined));
+    const changed = !this._renderKey || states.some((s, i) => s !== this._renderKey[i]);
+    this._renderKey = states;
+    return changed;
   }
 
   _stateObj(entityId) {
@@ -79,7 +122,7 @@ class LivoltekCard extends HTMLElement {
       value = numeric.toFixed(fractionDigits);
     }
     const unit = stateObj.attributes.unit_of_measurement || "";
-    return showUnit && unit ? `${value} ${unit}` : `${value}`;
+    return escapeHtml(showUnit && unit ? `${value} ${unit}` : `${value}`);
   }
 
   _metric(label, value, icon, accent = false) {
@@ -111,7 +154,9 @@ class LivoltekCard extends HTMLElement {
 
 
   _render() {
-    if (!this._config) return;
+    if (!this._config || !this._hass) return;
+    this._ensureCard();
+    if (!this._stateChanged()) return;
     const pv = this._stateObj(this._config.pv_power);
     const grid = this._stateObj(this._config.grid_power);
     const battery = this._stateObj(this._config.battery_power);
@@ -134,11 +179,11 @@ class LivoltekCard extends HTMLElement {
     const showUnitsSoc = this._config.show_units_battery_soc !== false;
     const showUnitsLoad = this._config.show_units_load_power !== false;
 
-    const pvVal = this._formatState(pv, 1, showUnitsPv).replace('—', '0');
-    const gridVal = this._formatState(grid, 1, showUnitsGrid).replace('—', '0');
-    const batteryVal = this._formatState(battery, 1, showUnitsBattery).replace('—', '0');
-    const socVal = this._formatState(soc, 0, showUnitsSoc).replace('—', '0');
-    const loadVal = this._formatState(load, 1, showUnitsLoad).replace('—', '0');
+    const pvVal = this._formatState(pv, 1, showUnitsPv);
+    const gridVal = this._formatState(grid, 1, showUnitsGrid);
+    const batteryVal = this._formatState(battery, 1, showUnitsBattery);
+    const socVal = this._formatState(soc, 0, showUnitsSoc);
+    const loadVal = this._formatState(load, 1, showUnitsLoad);
 
     const isConnected = (stateObj) => {
       if (!stateObj || [null, undefined, 'unknown', 'unavailable'].includes(stateObj.state)) return false;
@@ -152,17 +197,6 @@ class LivoltekCard extends HTMLElement {
       }
       icon = icon.replace(/fill="(?!url\(#A\))[^\"]*"/g, `fill="${color}"`);
       return icon;
-    }
-
-    const svgLine = (id, connected, style = "", active = true, isBack = false) => {
-      const color = connected ? colorActive : colorInactive;
-      const isBackAttr = isBack ? 'keyPoints="1;0" keyTimes="0;1"' : '';
-      return `
-        <svg style="${style}; position:absolute; z-index: 2; display: block;" viewBox="0 0 175 40">
-          <path d="M.888 5.374h25.178l37.945 29.856h112.771" stroke="${color}" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" id="${id}"></path>
-          ${active ? `<circle r="5" fill="${color}"><animateMotion dur="2s" ${isBackAttr} repeatCount="indefinite"><mpath xlink:href="#${id}"></mpath></animateMotion></circle>` : ""}
-        </svg>
-      `;
     }
 
     const pvNum = Number(pv && !isNaN(Number(pv.state)) ? pv.state : 0);
@@ -184,7 +218,7 @@ class LivoltekCard extends HTMLElement {
     this._card.innerHTML = `
       <div class="li_powerflow-card">
         ${this._config.title ? `
-          <div class="li_powerflow-header">${this._config.title}</div>
+          <div class="li_powerflow-header">${escapeHtml(this._config.title)}</div>
         ` : ''}
         <div class="li_powerflow-body">
           <div class="li_powerflow-left">
@@ -200,7 +234,7 @@ class LivoltekCard extends HTMLElement {
               connected: pvConnected,
               svgStyle: 'transform: rotateX(180deg) rotateY(180deg); top: calc(var(--icon-width) / 2); left: var(--icon-width); right: 0;',
               isActive: pvActive,
-              isBack: pvNum < 0
+              isBack: pvNum > 0
             })}
             ${this._renderBlock({
               type: 'battery',
@@ -222,7 +256,7 @@ class LivoltekCard extends HTMLElement {
               svgStyle: 'left: 0; right: 0; transform: rotateY(180deg);bottom: calc(var(--icon-width) / 2);left: var(--icon-width);',
               extraStyle: 'align-items: start;',
               isActive: batteryActive,
-              isBack: batteryNum > 0
+              isBack: batteryNum < 0
             })}
           </div>
           <div class="li_powerflow-center">
@@ -388,17 +422,19 @@ if (!customElements.get(CARD_TAG)) {
 }
 
 window.customCards = window.customCards || [];
-window.customCards.push({
-  type: CARD_TAG,
-  name: "Livoltek Power Card",
-  description: "Summary card for Livoltek sensors",
-  preview: true,
-});
+if (!window.customCards.some(card => card.type === CARD_TAG)) {
+  window.customCards.push({
+    type: CARD_TAG,
+    name: "Livoltek Power Card",
+    description: "Summary card for Livoltek sensors",
+    preview: true,
+  });
+}
 
 console.groupCollapsed(
-  '%c LIVOLTEK-POWER-CARD %c v1.0.0 ',
+  '%c LIVOLTEK-POWER-CARD %c v1.1.0 ',
   'color: white; background: #488fc2; font-weight: 700;',
   'color: #488fc2; background: white; font-weight: 700;'
 );
-console.log("Readme:", "https://github.com/uhodav/ha_livoltek"),
+console.log("Readme:", "https://github.com/uhodav/ha_livoltek");
 console.groupEnd();

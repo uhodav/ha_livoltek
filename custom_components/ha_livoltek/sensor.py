@@ -1,9 +1,12 @@
 """Sensor platform for Livoltek integration."""
 import json
 import logging
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
+from typing import Any
 
 from homeassistant.components.sensor import (
+    RestoreSensor,
     SensorDeviceClass,
     SensorEntity,
     SensorStateClass,
@@ -16,20 +19,26 @@ from homeassistant.const import (
     UnitOfFrequency,
     UnitOfMass,
     UnitOfPower,
+    UnitOfTime,
 )
-from homeassistant.helpers import entity_registry as er
+from homeassistant.core import callback
 from homeassistant.helpers.entity import EntityCategory
+from homeassistant.helpers.restore_state import ExtraStoredData
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 
 from .const import (
     ALARM_TYPE_MAP,
     BATTERY_TYPE_MAP,
     CHARGING_PILE_STATUS_MAP,
+    CONF_BATTERY_CAPACITY,
+    CONF_BATTERY_RESERVE_SOC,
     CONF_DEVICE_MODEL,
     CONF_DEVICE_SN,
     CONF_SITE_ID,
     CONF_SITE_NAME,
     CONF_WORKMODE,
+    DEFAULT_BATTERY_RESERVE_SOC,
     DOMAIN,
     ENERGY_STATUS_MAP,
     GRID_STATUS_MAP,
@@ -76,6 +85,43 @@ def _get_last_alarm_field(alarms_data: dict, field: str):
     if not records or not isinstance(records, list):
         return None
     return records[0].get(field)
+
+
+def _battery_soc(data: dict) -> float | None:
+    """Battery SoC: realtime BMS value first, then storage, then power flow."""
+    for value in (
+        (data.get("realtime") or {}).get("batterySoc"),
+        (data.get("storage") or {}).get("currentSoc"),
+        (data.get("power_flow") or {}).get("energySoc"),
+    ):
+        soc = _safe_float(value)
+        if soc is not None:
+            return soc
+    return None
+
+
+def _storage_voltage(storage: dict) -> float | None:
+    """Latest battery voltage from the storage historyMap."""
+    history = storage.get("historyMap")
+    if not isinstance(history, dict) or not history:
+        return None
+    latest = history[max(history, key=lambda ts: _safe_float(ts) or 0)]
+    if isinstance(latest, list) and latest and isinstance(latest[0], dict):
+        return _safe_float(latest[0].get("energyVolage"))
+    return None
+
+
+def _battery_capacity(entry_data: dict, data: dict) -> tuple[float | None, str]:
+    """Battery capacity in kWh: configured value, or BMS Ah × battery voltage."""
+    configured = _safe_float(entry_data.get(CONF_BATTERY_CAPACITY))
+    if configured:
+        return configured, "configured"
+    storage = data.get("storage") or {}
+    amp_hours = _safe_float(storage.get("BMSCapacity"))
+    voltage = _safe_float((data.get("realtime") or {}).get("batteryVoltage")) or _storage_voltage(storage)
+    if amp_hours and voltage:
+        return round(amp_hours * voltage / 1000, 2), "estimated"
+    return None, "unknown"
 
 
 def _get_group_label(hass, group: str) -> str:
@@ -134,7 +180,10 @@ POWER_FLOW_SENSORS = [
     ("battery_status", "power_flow", "energyStatus", None, None, None, "mdi:battery-heart-variant", EntityCategory.DIAGNOSTIC),
     ("charging_pile_status", "power_flow", "chargingPileStatus", None, None, None, "mdi:ev-station", EntityCategory.DIAGNOSTIC),
     ("power_flow_timestamp", "power_flow", "timestamp", SensorDeviceClass.TIMESTAMP, None, None, "mdi:clock-outline", EntityCategory.DIAGNOSTIC),
+    ("battery_time_to_full", "power_flow", "_time_to_full", SensorDeviceClass.DURATION, SensorStateClass.MEASUREMENT, UnitOfTime.MINUTES, "mdi:battery-clock", None),
+    ("battery_time_to_empty", "power_flow", "_time_to_empty", SensorDeviceClass.DURATION, SensorStateClass.MEASUREMENT, UnitOfTime.MINUTES, "mdi:battery-clock-outline", None),
 ]
+
 
 OVERVIEW_SENSORS = [
     ("current_power", "overview", "currentPower", SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, UnitOfPower.KILO_WATT, "mdi:flash", None),
@@ -261,6 +310,19 @@ DEVICE_BASIC_SENSORS = [
     ("device_load_day", "device_basic", "loadDay", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, UnitOfEnergy.KILO_WATT_HOUR, "mdi:home-lightning-bolt", None),
 ]
 
+# Lifetime totals for the HA Energy dashboard, accumulated from the daily counters
+ENERGY_TOTAL_SENSORS = [
+    ("pv_total_energy", "device_basic", "powerGenerationDay", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, UnitOfEnergy.KILO_WATT_HOUR, "mdi:solar-power", None),
+    ("grid_import_total_energy", "device_basic", "positiveDay", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, UnitOfEnergy.KILO_WATT_HOUR, "mdi:transmission-tower-import", None),
+    ("grid_export_total_energy", "device_basic", "negativeDay", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, UnitOfEnergy.KILO_WATT_HOUR, "mdi:transmission-tower-export", None),
+    ("battery_charge_total_energy", "device_basic", "chargeDay", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, UnitOfEnergy.KILO_WATT_HOUR, "mdi:battery-arrow-up", None),
+    ("battery_discharge_total_energy", "device_basic", "dischargeDay", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, UnitOfEnergy.KILO_WATT_HOUR, "mdi:battery-arrow-down", None),
+    ("load_total_energy", "device_basic", "loadDay", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, UnitOfEnergy.KILO_WATT_HOUR, "mdi:home-lightning-bolt", None),
+]
+
+_ACCUMULATED_KEYS = {definition[0] for definition in ENERGY_TOTAL_SENSORS}
+_BATTERY_TIME_KEYS = {"battery_time_to_full", "battery_time_to_empty"}
+
 ALL_SENSOR_DEFINITIONS = (
     POWER_FLOW_SENSORS
     + OVERVIEW_SENSORS
@@ -279,6 +341,7 @@ ALL_SENSOR_DEFINITIONS = (
     + SITE_INSTALLER_SENSORS
     + SITE_OWNER_SENSORS
     + DEVICE_BASIC_SENSORS
+    + ENERGY_TOTAL_SENSORS
 )
 
 # Set of sensor keys that represent ms-epoch timestamps
@@ -287,28 +350,8 @@ _TIMESTAMP_KEYS = {
     "device_update_time", "realtime_timestamp",
 }
 
-_DISABLED_BY_DEFAULT_KEYS = _TIMESTAMP_KEYS
-
-_NO_HISTORY_KEYS = _TIMESTAMP_KEYS | {
-    "device_sn", "product_type", "firmware_version", "device_type",
-    "device_manufacturer", "device_registration_time",
-    "site_type", "site_country", "site_timezone", "pv_capacity",
-    "installer_name", "installer_org_code",
-    "owner_name", "owner_email", "owner_login_account", "owner_country",
-    "battery_sn",
-
-    "pv_status", "grid_status", "load_status", "battery_status",
-    "charging_pile_status", "running_status", "device_running_status_basic",
-    "site_status", "device_communication_status", "has_alarm",
-    "online_devices",
-
-    "alarm_total", "last_alarm_name", "last_alarm_time",
-
-    "bms_firmware_version", "battery_module_count", "battery_cell_count",
-    "battery_max_cell_voltage_id", "battery_min_cell_voltage_id",
-    "battery_max_cell_temp_id",
-    "inverter_grid_charge_flag", "inverter_work_mode_setting",
-}
+# work_mode: the API does not report the actual inverter work mode
+_DISABLED_BY_DEFAULT_KEYS = _TIMESTAMP_KEYS | {"work_mode"}
 
 _SLOW_COORDINATOR_SOURCES = frozenset({"daily_energy"})
 
@@ -333,8 +376,14 @@ async def async_setup_entry(hass, entry, async_add_entities):
         else:
             coordinator = coord_medium
 
+        if key in _ACCUMULATED_KEYS:
+            sensor_cls = LivoltekAccumulatedEnergySensor
+        elif key in _BATTERY_TIME_KEYS:
+            sensor_cls = LivoltekBatteryTimeSensor
+        else:
+            sensor_cls = LivoltekSensor
         sensors.append(
-            LivoltekSensor(
+            sensor_cls(
                 coordinator=coordinator,
                 entry_data=entry_data,
                 entry_id=entry.entry_id,
@@ -399,17 +448,6 @@ class LivoltekSensor(CoordinatorEntity, SensorEntity):
         if sensor_key in _DISABLED_BY_DEFAULT_KEYS:
             self._attr_entity_registry_enabled_default = False
 
-    async def async_added_to_hass(self) -> None:
-        """Set recorder options when entity is registered."""
-        await super().async_added_to_hass()
-        if self._sensor_key in _NO_HISTORY_KEYS:
-            registry = er.async_get(self.hass)
-            entry = registry.async_get(self.entity_id)
-            if entry and entry.options.get("recorder", {}).get("should_record") is not False:
-                registry.async_update_entity_options(
-                    self.entity_id, "recorder", {"should_record": False},
-                )
-
     @property
     def device_info(self):
         group_label = _get_group_label(self.hass, self._data_source)
@@ -454,9 +492,12 @@ class LivoltekSensor(CoordinatorEntity, SensorEntity):
             raw_time = _get_last_alarm_field(source_data, "originTime")
             if raw_time:
                 try:
-                    return datetime.fromisoformat(str(raw_time)).replace(tzinfo=timezone.utc)
+                    parsed = datetime.fromisoformat(str(raw_time))
                 except (ValueError, TypeError):
                     return _ms_to_datetime(raw_time)
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+                return parsed
             return None
 
         # -- Work mode: parse JSON, map to description ---------------------
@@ -592,7 +633,7 @@ class LivoltekSensor(CoordinatorEntity, SensorEntity):
                             attrs[f"mode_{val}"] = desc
                 except (json.JSONDecodeError, TypeError):
                     pass
-            if not attrs:
+            if not any(k.startswith("mode_") for k in attrs):
                 for k, v in WORK_MODE_MAP.items():
                     attrs[f"mode_{k}"] = v
 
@@ -659,3 +700,109 @@ class LivoltekSensor(CoordinatorEntity, SensorEntity):
                 attrs["battery_type"] = BATTERY_TYPE_MAP.get(str(bt), str(bt))
 
         return attrs
+
+
+@dataclass
+class _AccumulatedEnergyData(ExtraStoredData):
+    """Persisted state of an accumulated energy sensor."""
+
+    base: float
+    last_daily: float
+    last_date: str | None
+
+    def as_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+class LivoltekAccumulatedEnergySensor(LivoltekSensor, RestoreSensor):
+    """Lifetime total built from a daily counter that resets every day.
+
+    last_date is the local date of the last detected daily reset.
+    """
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._base = 0.0
+        self._last_daily = 0.0
+        self._last_date: str | None = None
+        self._total: float | None = None
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        extra = await self.async_get_last_extra_data()
+        if extra is not None:
+            data = extra.as_dict()
+            self._base = float(data.get("base") or 0.0)
+            self._last_daily = float(data.get("last_daily") or 0.0)
+            self._last_date = data.get("last_date")
+            self._total = round(self._base + self._last_daily, 3)
+        self._accumulate()
+
+    @property
+    def extra_restore_state_data(self) -> _AccumulatedEnergyData:
+        return _AccumulatedEnergyData(self._base, self._last_daily, self._last_date)
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self._accumulate()
+        super()._handle_coordinator_update()
+
+    def _accumulate(self) -> None:
+        daily = (self.coordinator.data or {}).get(self._data_source) or {}
+        value = _safe_float(daily.get(self._data_field))
+        if value is None:
+            return
+        today = dt_util.now().date().isoformat()
+        if value >= self._last_daily:
+            self._last_daily = value
+        elif value < self._last_daily * 0.9 and self._last_date != today:
+            # Daily counter reset (once per local day); smaller dips are API noise
+            self._base += self._last_daily
+            self._last_daily = value
+            self._last_date = today
+        self._total = round(self._base + self._last_daily, 3)
+
+    @property
+    def native_value(self):
+        return self._total
+
+
+class LivoltekBatteryTimeSensor(LivoltekSensor):
+    """Estimated minutes until the battery is full (charging) or at reserve SoC (discharging)."""
+
+    _MIN_POWER_KW = 0.02
+
+    def _estimate(self) -> tuple[float | None, dict[str, Any]]:
+        data = self.coordinator.data or {}
+        power = _safe_float((data.get("power_flow") or {}).get("energyPower"))
+        soc = _battery_soc(data)
+        capacity, capacity_source = _battery_capacity(self._entry_data, data)
+        reserve = _safe_float(self._entry_data.get(CONF_BATTERY_RESERVE_SOC))
+        if reserve is None:
+            reserve = DEFAULT_BATTERY_RESERVE_SOC
+        attrs = {
+            "battery_capacity_kwh": capacity,
+            "battery_capacity_source": capacity_source,
+            "battery_reserve_soc": reserve,
+        }
+        if power is None or soc is None or not capacity:
+            return None, attrs
+
+        # energyPower: positive = charging, negative = discharging
+        if self._sensor_key == "battery_time_to_full":
+            if power < self._MIN_POWER_KW or soc >= 100:
+                return None, attrs
+            energy_kwh = (100 - soc) / 100 * capacity
+        else:
+            if power > -self._MIN_POWER_KW or soc <= reserve:
+                return None, attrs
+            energy_kwh = (soc - reserve) / 100 * capacity
+        return round(energy_kwh / abs(power) * 60), attrs
+
+    @property
+    def native_value(self):
+        return self._estimate()[0]
+
+    @property
+    def extra_state_attributes(self):
+        return {"data_group": self._data_source, **self._estimate()[1]}

@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 DOMAIN = "ha_livoltek"
 
 CONF_SERVER_TYPE = "server_type"
@@ -15,6 +17,9 @@ CONF_WORKMODE = "workmode"
 CONF_ACCOUNT = "account"
 CONF_PASSWORD = "password"  # stored as MD5 hash
 CONF_ENABLED_GROUPS = "enabled_groups"
+CONF_WORK_MODE_HIDDEN = "work_mode_hidden"  # one-time migration flag
+CONF_BATTERY_CAPACITY = "battery_capacity"  # kWh, 0 = estimate from BMS
+CONF_BATTERY_RESERVE_SOC = "battery_reserve_soc"  # %, discharge stops here
 
 # Endpoint group identifiers for selective data fetching
 GROUP_POWER_FLOW = "power_flow"
@@ -88,9 +93,8 @@ SERVERS = {
 }
 
 DEFAULT_UPDATE_INTERVAL = 5  # minutes
-
-# Daily energy report fetch interval (seconds)
-ENERGY_REPORT_INTERVAL = 3600  # 1 hour
+DEFAULT_BATTERY_CAPACITY = 0.0
+DEFAULT_BATTERY_RESERVE_SOC = 10
 
 # Human-readable status mappings
 RUNNING_STATUS_MAP = {
@@ -338,30 +342,14 @@ CONTROL_TYPE_MAP_UK = {
     4: "Аварійна зарядка",
 }
 
-# ── MQTT configuration (informational) ───────────────────────────────
-MQTT_SERVERS = {
-    SERVER_INTERNATIONAL: "mqtt://api.livoltek-portal.com:1883",
-    SERVER_EUROPEAN: "mqtt://api-eu.livoltek-portal.com:1883",
-}
-MQTT_TOPIC_ALARM = "ev_alarm_topic/{sn}"
-MQTT_TOPIC_WORK_STATUS = "ev_work_status_topic/{sn}"
-
 # ── API rate limits ──────────────────────────────────────────────────
 # Minimum update interval (minutes) to respect API rate limits
 MIN_UPDATE_INTERVAL = 5  # realtime data interval is 5 min on server side
-# Device power report & site day energy: max 1 request per hour per device/site
-ENERGY_REPORT_MIN_INTERVAL = 3600  # seconds
-from datetime import timedelta
 
-PRIVATE_API_SERVERS = {
-    SERVER_INTERNATIONAL: "https://evs.livoltek-portal.com",
-    SERVER_EUROPEAN: "https://evs.livoltek-portal.com",
-}
-
-SCAN_INTERVAL_FAST = timedelta(seconds=60)
-SCAN_INTERVAL_MEDIUM = timedelta(minutes=5)
+# Device power report: max 1 request per hour per device
 SCAN_INTERVAL_SLOW = timedelta(hours=1)
-STARTUP_JITTER_MAX = 30
+# Rarely changing data (installer, owner, social, BESS description)
+STATIC_DATA_INTERVAL = timedelta(hours=6)
 
 
 BACKOFF_INTERVALS = [
@@ -369,6 +357,7 @@ BACKOFF_INTERVALS = [
     timedelta(seconds=120),
     timedelta(seconds=300),
     timedelta(seconds=600),
+    timedelta(seconds=1800),
 ]
 
 

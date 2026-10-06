@@ -15,19 +15,19 @@
   </div>
   <script>
     const testStates = {
-      'sensor.livoltek_ХХХХХХХХ_pv_power': {
+      'sensor.livoltek_XXXXXXXX_pv_power': {
         state: '0', attributes: { unit_of_measurement: 'W' }
       },
-      'sensor.livoltek_ХХХХХХХХ_grid_power': {
+      'sensor.livoltek_XXXXXXXX_grid_power': {
         state: '0', attributes: { unit_of_measurement: 'W' }
       },
-      'sensor.livoltek_ХХХХХХХХ_battery_power': {
+      'sensor.livoltek_XXXXXXXX_battery_power': {
         state: '0', attributes: { unit_of_measurement: 'W' }
       },
-      'sensor.livoltek_ХХХХХХХХ_battery_soc': {
+      'sensor.livoltek_XXXXXXXX_battery_soc': {
         state: '075', attributes: { unit_of_measurement: '%' }
       },
-      'sensor.livoltek_ХХХХХХХХ_load_power': {
+      'sensor.livoltek_XXXXXXXX_load_power': {
         state: '0', attributes: { unit_of_measurement: 'W' }
       },
     };
@@ -39,11 +39,11 @@
     // Конфиг карточки
     const config = {
       title: 'Power Flow',
-      pv_power: 'sensor.livoltek_ХХХХХХХХ_pv_power',
-      grid_power: 'sensor.livoltek_ХХХХХХХХ_grid_power',
-      battery_power: 'sensor.livoltek_ХХХХХХХХ_battery_power',
-      battery_soc: 'sensor.livoltek_ХХХХХХХХ_battery_soc',
-      load_power: 'sensor.livoltek_ХХХХХХХХ_load_power',
+      pv_power: 'sensor.livoltek_XXXXXXXX_pv_power',
+      grid_power: 'sensor.livoltek_XXXXXXXX_grid_power',
+      battery_power: 'sensor.livoltek_XXXXXXXX_battery_power',
+      battery_soc: 'sensor.livoltek_XXXXXXXX_battery_soc',
+      load_power: 'sensor.livoltek_XXXXXXXX_load_power',
     };
     // Ждём, пока custom element будет определён
     window.addEventListener('DOMContentLoaded', () => {

@@ -116,11 +116,31 @@ You can enable/disable data groups during setup and in options.
     Communication status, running status, registration time, daily power generation/grid export/import/charge/discharge/load.
 
 ### Sensor summary
-- Total sensors: **110**
+- Total sensors: **116**
 - Each data group is a **separate HA device** (e.g. `HPXXXXXHYYMMNNN (⚡ Power Flow)`)
 - Includes measurement and diagnostic entities
 - Every sensor has `data_group` attribute showing its source group
 - Disabling a group in options automatically removes its device
+
+### Energy dashboard
+Lifetime totals that never decrease, built from the daily counters of **Device Basic Data** (`device_basic`, updated every poll). Use them in Settings → Dashboards → Energy:
+
+| Energy dashboard field | Sensor |
+|---|---|
+| Grid consumption | `grid_import_total_energy` |
+| Return to grid | `grid_export_total_energy` |
+| Solar production | `pv_total_energy` |
+| Battery: energy going in | `battery_charge_total_energy` |
+| Battery: energy coming out | `battery_discharge_total_energy` |
+| Individual device (optional) | `load_total_energy` |
+
+The `device_basic` group must be enabled. Values are restored after a restart.
+
+### Battery time estimates
+- `battery_time_to_full`: minutes until 100% while charging, otherwise unknown
+- `battery_time_to_empty`: minutes until the reserve SoC while discharging, otherwise unknown
+
+The estimate uses the current battery power, SoC and battery capacity. The capacity is estimated as BMS capacity (Ah) × battery voltage, or you can set it in the integration options (**Battery capacity**, kWh). **Battery reserve SoC** (default 10%) is the level the inverter stops discharging at. Attributes show the capacity used and its source.
 
 ### Control entities
 #### Buttons (BESS control)
@@ -131,7 +151,7 @@ You can enable/disable data groups during setup and in options.
 - `button.emergency_charging`
 
 #### Select
-- `select.work_mode_select` — sets inverter work mode
+- `select.work_mode_select` — sets inverter work mode (disabled by default: the API does not report the current mode, so the shown value can be stale; the `work_mode` sensor is disabled for the same reason)
 
 ### Service: set work mode with schedule
 Service name: `ha_livoltek.set_work_mode_schedule`
@@ -170,15 +190,10 @@ A custom Lovelace card for Home Assistant to visualize Livoltek inverter and BES
 - Visual editor for easy configuration in Lovelace UI
 
 ### Installation
-1. Copy both files to your Home Assistant `www` directory (preserving folders):
-   - `custom_components/ha_livoltek/frontend/livoltek-power-card.js`
-   - `custom_components/ha_livoltek/frontend/livoltek-power-card-editor.js`
-2. Add both as resources in Home Assistant (Settings → Dashboards → Resources):
-   - `/ha_livoltek/livoltek-power-card.js`
-   - `/ha_livoltek/livoltek-power-card-editor.js`
-3. Add the card via UI: "Add Card" → "Custom: Livoltek Power Card". Use the visual editor to select your sensors (only `sensor.livoltek_...` will be shown).
+1. The integration serves the card at `/ha_livoltek/livoltek-power-card.js` and loads it automatically, no manual copy or Lovelace resource is needed. If you added the card as a resource manually before, remove that resource.
+2. Add the card via UI: "Add Card" → "Custom: Livoltek Power Card". Use the visual editor to select your sensors.
 
-See full details and usage: [README-power-card.md](custom_components/ha_livoltek/frontend/README-power-card.md)
+See full details and usage: [frontend/README.md](custom_components/ha_livoltek/frontend/README.md)
 
 ---
 
@@ -289,11 +304,31 @@ See full details and usage: [README-power-card.md](custom_components/ha_livoltek
     Статус зв'язку, статус роботи, час реєстрації, добова генерація/експорт/імпорт/заряд/розряд/навантаження.
 
 ### Підсумок по сенсорах
-- Усього сенсорів: **110**
+- Усього сенсорів: **116**
 - Кожна група даних — **окремий пристрій HA** (наприклад, `HPXXXXXHYYMMNNN (⚡ Потоки енергії)`)
 - Є вимірювальні та діагностичні сутності
 - Кожен сенсор має атрибут `data_group` з назвою групи-джерела
 - Вимкнення групи в налаштуваннях автоматично видаляє її пристрій
+
+### Енергетична панель
+Загальні лічильники, які ніколи не зменшуються, побудовані з добових лічильників **Device Basic Data** (`device_basic`, оновлюються при кожному опитуванні). Підключайте їх у Налаштування → Панелі → Енергія:
+
+| Поле енергетичної панелі | Сенсор |
+|---|---|
+| Споживання з мережі | `grid_import_total_energy` |
+| Повернення в мережу | `grid_export_total_energy` |
+| Сонячна генерація | `pv_total_energy` |
+| Батарея: енергія, що надходить | `battery_charge_total_energy` |
+| Батарея: енергія, що віддається | `battery_discharge_total_energy` |
+| Окремий пристрій (опційно) | `load_total_energy` |
+
+Група `device_basic` має бути увімкнена. Значення відновлюються після перезапуску.
+
+### Оцінка часу роботи батареї
+- `battery_time_to_full`: хвилини до 100% під час заряду, інакше невідомо
+- `battery_time_to_empty`: хвилини до резервного заряду під час розряду, інакше невідомо
+
+Оцінка використовує поточну потужність батареї, SoC та ємність. Ємність оцінюється як ємність BMS (Ah) × напруга батареї, або її можна задати в налаштуваннях інтеграції (**Ємність батареї**, кВт·год). **Резервний заряд батареї** (за замовчуванням 10%) — рівень, на якому інвертор припиняє розряд. В атрибутах видно використану ємність і її джерело.
 
 ### Сутності керування
 #### Кнопки (BESS control)
@@ -304,7 +339,7 @@ See full details and usage: [README-power-card.md](custom_components/ha_livoltek
 - `button.emergency_charging`
 
 #### Select
-- `select.work_mode_select` — вибір режиму роботи інвертора
+- `select.work_mode_select` — вибір режиму роботи інвертора (вимкнено за замовчуванням: API не повідомляє поточний режим, тому показане значення може бути застарілим; сенсор `work_mode` вимкнено з тієї ж причини)
 
 ### Сервіс: встановлення режиму з розкладом
 Назва сервісу: `ha_livoltek.set_work_mode_schedule`
@@ -342,13 +377,8 @@ data:
 - Візуальний редактор для налаштування прямо в Lovelace
 
 ### Встановлення
-1. Скопіюйте обидва файли у директорію `www` Home Assistant (зберігаючи структуру папок):
-   - `custom_components/ha_livoltek/frontend/livoltek-power-card.js`
-   - `custom_components/ha_livoltek/frontend/livoltek-power-card-editor.js`
-2. Додайте обидва файли як ресурси (Налаштування → Панелі → Ресурси):
-   - `/ha_livoltek/livoltek-power-card.js`
-   - `/ha_livoltek/livoltek-power-card-editor.js`
-3. Додайте картку через UI: "Додати картку" → "Custom: Livoltek Power Card". Виберіть сенсори через візуальний редактор (будуть показані лише `sensor.livoltek_...`).
+1. Інтеграція сама роздає картку за адресою `/ha_livoltek/livoltek-power-card.js` і підключає її автоматично, копіювати файли чи додавати ресурс Lovelace не потрібно. Якщо раніше ви додали картку як ресурс вручну, видаліть цей ресурс.
+2. Додайте картку через UI: "Додати картку" → "Custom: Livoltek Power Card". Виберіть сенсори через візуальний редактор.
 
 ---
 

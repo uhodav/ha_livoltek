@@ -35,35 +35,44 @@ const LABELS = {
 };
 
 
+const OVERRIDE_KEYS = [
+  'active_sensor_pv', 'active_sensor_battery', 'active_sensor_grid', 'active_sensor_load',
+  'connected_sensor_pv', 'connected_sensor_battery', 'connected_sensor_grid', 'connected_sensor_load',
+];
+
+const escapeHtml = (value) => String(value ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
+
 class LivoltekPowerCardEditor extends HTMLElement {
+  // Groups power-flow sensors by HA device; sensor role is taken from translation_key
   _buildInverterMap() {
     if (!this._hass) return {};
     const entities = this._hass.entities || {};
     const map = {};
-    
-    // Entity ID format: sensor.{device_sn}_{group_transliterated}_{sensor_key}
+
     for (const [entityId, entry] of Object.entries(entities)) {
       if (entry.platform !== 'ha_livoltek') continue;
       if (!entityId.startsWith('sensor.')) continue;
-      
-      // Strip "sensor." prefix
-      const uid = entityId.slice(7);
-      
-      for (const key of this._sensorKeys) {
-        const suffix = '_' + key;
-        if (uid.endsWith(suffix)) {
-          // Extract device SN (first segment before first underscore that looks like a serial)
-          const match = uid.match(/^([a-zA-Z]{2}\d+[a-zA-Z0-9]*)/i);
-          if (match) {
-            const inverterId = match[1].toLowerCase();
-            if (!map[inverterId]) map[inverterId] = {};
-            map[inverterId][key] = entityId;
-          }
-          break;
-        }
-      }
+
+      const key = this._sensorKeys.includes(entry.translation_key)
+        ? entry.translation_key
+        : this._sensorKeys.find(k => entityId.endsWith('_' + k));
+      if (!key) continue;
+
+      const inverterId = entry.device_id || 'ha_livoltek';
+      if (!map[inverterId]) map[inverterId] = {};
+      map[inverterId][key] = entityId;
     }
     return map;
+  }
+
+  _inverterLabel(inverterId) {
+    const device = this._hass?.devices?.[inverterId];
+    return device?.name_by_user || device?.name || inverterId;
   }
 
   _applyInverterSensors(inverterId) {
@@ -73,10 +82,10 @@ class LivoltekPowerCardEditor extends HTMLElement {
       const entityId = sensors[key];
       if (entityId && this._hass.states[entityId]) {
         this._config[key] = entityId;
-        const picker = this.shadowRoot.getElementById(key);
-        if (picker) picker.value = entityId;
       }
     });
+    OVERRIDE_KEYS.forEach(key => delete this._config[key]);
+    this.setupEntityPickers();
     this.configChanged(this._config);
   }
   constructor() {
@@ -87,8 +96,8 @@ class LivoltekPowerCardEditor extends HTMLElement {
     this._sensorKeys = ['pv_power', 'grid_power', 'battery_power', 'battery_soc', 'load_power'];
     this._deviceInverter = '';
     this._inverterMap = {};
-    this._platformEntityIds = new Set();
     this._rendered = false;
+    this._elementsLoaded = false;
   }
 
   setConfig(config) {
@@ -104,12 +113,16 @@ class LivoltekPowerCardEditor extends HTMLElement {
     if (this._hass && !this._rendered) {
       this._findInverters();
       this.render();
+    } else if (this._rendered) {
+      this._syncInputs();
+      this.setupEntityPickers();
     }
   }
 
   set hass(hass) {
     this._hass = hass;
-    if (this._config && !this._hassSet) {
+    if (!this._config) return;
+    if (!this._hassSet) {
       this._hassSet = true;
       this._findInverters();
       if (!this._rendered) {
@@ -117,51 +130,64 @@ class LivoltekPowerCardEditor extends HTMLElement {
       } else {
         this.setupEntityPickers();
       }
+      return;
+    }
+    if (this._elementsLoaded) {
+      this.shadowRoot.querySelectorAll('ha-entity-picker').forEach(picker => { picker.hass = hass; });
     }
   }
+
+  // ha-entity-picker and friends are lazy-loaded by HA; force-load them via the entities card editor
+  async _loadHaElements() {
+    if (!customElements.get('ha-entity-picker')) {
+      try {
+        const helpers = await window.loadCardHelpers?.();
+        const card = await helpers?.createCardElement({ type: 'entities', entities: [] });
+        await card?.constructor?.getConfigElement?.();
+      } catch (err) {
+        console.warn('Livoltek card editor: failed to preload HA elements', err);
+      }
+    }
+    this._elementsLoaded = true;
+  }
+
   _findInverters() {
     if (!this._hass) return;
 
     this._inverterMap = this._buildInverterMap();
     this._deviceds = Object.keys(this._inverterMap);
 
-    // Build set of all entity_ids belonging to ha_livoltek for entity picker filter
-    this._platformEntityIds = new Set();
-    const entities = this._hass.entities || {};
-    for (const [entityId, entry] of Object.entries(entities)) {
-      if (entry.platform === 'ha_livoltek') this._platformEntityIds.add(entityId);
-    }
-
     if (this._deviceInverter) return;
 
-    // Try to detect current inverter from existing config
-    if (this._config && this._config.pv_power) {
-      const cfgEntity = this._config.pv_power;
-      for (const [invId, sensors] of Object.entries(this._inverterMap)) {
-        if (sensors.pv_power === cfgEntity) {
-          this._deviceInverter = invId;
-          this._applyInverterSensors(invId);
-          const select = this.shadowRoot && this.shadowRoot.getElementById('inverter_select');
-          if (select) select.value = invId;
-          return;
-        }
-      }
+    const current = Object.entries(this._inverterMap).find(([, sensors]) =>
+      this._sensorKeys.some(key => this._config[key] && sensors[key] === this._config[key]));
+    if (current) {
+      this._deviceInverter = current[0];
+      return;
     }
-    if (this._deviceds.length) {
+
+    const isEmpty = this._sensorKeys.every(key => !this._config[key]);
+    if (isEmpty && this._deviceds.length) {
       this._deviceInverter = this._deviceds[0];
       this._applyInverterSensors(this._deviceInverter);
-      const select = this.shadowRoot && this.shadowRoot.getElementById('inverter_select');
-      if (select) select.value = this._deviceInverter;
     }
   }
 
+  _syncInputs() {
+    const title = this.shadowRoot.getElementById('title');
+    if (title && title.value !== (this._config.title || '')) title.value = this._config.title || '';
+    this._sensorKeys.forEach(key => {
+      const toggle = this.shadowRoot.getElementById(`show_units_${key}`);
+      if (toggle) toggle.checked = this._config[`show_units_${key}`] !== false;
+    });
+  }
+
   configChanged(newConfig) {
-    const event = new Event('config-changed', {
+    this.dispatchEvent(new CustomEvent('config-changed', {
       bubbles: true,
       composed: true,
-    });
-    event.detail = { config: newConfig };
-    this.dispatchEvent(event);
+      detail: { config: newConfig },
+    }));
   }
 
   _lang() {
@@ -216,15 +242,15 @@ class LivoltekPowerCardEditor extends HTMLElement {
       <div class="card-config">
         <div class="option">
           <label>${this._t('title_label')}</label>
-          <input type="text" id="title" value="${this._config.title || ''}" placeholder="${this._t('title_label')}" />
+          <input type="text" id="title" value="${escapeHtml(this._config.title)}" placeholder="${this._t('title_label')}" />
         </div>
         ${this._deviceds.length ? `
         <div class="option">
           <label>${this._t('device_label')}</label>
           <div style="display: flex; gap: 8px;">
             <select id="inverter_select" style="flex:1;">
-              <option value="null" ${!this._deviceInverter ? 'selected' : ''}>${this._t('none_label')}</option>
-              ${this._deviceds.map(id => `<option value="${id}" ${id === this._deviceInverter ? 'selected' : ''}>${id}</option>`).join('')}
+              <option value="" ${!this._deviceInverter ? 'selected' : ''}>${this._t('none_label')}</option>
+              ${this._deviceds.map(id => `<option value="${escapeHtml(id)}" ${id === this._deviceInverter ? 'selected' : ''}>${escapeHtml(this._inverterLabel(id))}</option>`).join('')}
             </select>
             <button class="reset-btn" id="reset_sensors">⟳</button>
           </div>
@@ -320,35 +346,20 @@ class LivoltekPowerCardEditor extends HTMLElement {
         </ha-expansion-panel>
       </div>
     `;
-    this.setupEntityPickers();
     this.attachListeners();
     this._rendered = true;
+    this._loadHaElements().then(() => this.setupEntityPickers());
   }
 
+  // Override pickers stay empty unless set explicitly; the card then falls back to the main sensor
   setupEntityPickers() {
-    if (!this._hass) return;
-    const pickers = [
-      { id: 'pv_power', value: this._config.pv_power },
-      { id: 'grid_power', value: this._config.grid_power },
-      { id: 'battery_power', value: this._config.battery_power },
-      { id: 'battery_soc', value: this._config.battery_soc },
-      { id: 'load_power', value: this._config.load_power },
-      { id: 'active_sensor_pv', value: this._config.active_sensor_pv || this._config.pv_power },
-      { id: 'active_sensor_battery', value: this._config.active_sensor_battery || this._config.battery_power },
-      { id: 'active_sensor_grid', value: this._config.active_sensor_grid || this._config.grid_power },
-      { id: 'active_sensor_load', value: this._config.active_sensor_load || this._config.load_power },
-      { id: 'connected_sensor_pv', value: this._config.connected_sensor_pv || this._config.pv_power },
-      { id: 'connected_sensor_battery', value: this._config.connected_sensor_battery || this._config.battery_soc },
-      { id: 'connected_sensor_grid', value: this._config.connected_sensor_grid || this._config.grid_power },
-      { id: 'connected_sensor_load', value: this._config.connected_sensor_load || this._config.load_power },
-    ];
-    pickers.forEach(({ id, value }) => {
+    if (!this._hass || !this._elementsLoaded) return;
+    [...this._sensorKeys, ...OVERRIDE_KEYS].forEach(id => {
       const picker = this.shadowRoot.getElementById(id);
       if (picker) {
         picker.hass = this._hass;
-        picker.value = value || '';
-        picker.includeDomains = ['sensor'];
-        picker.entityFilter = () => true;
+        picker.value = this._config[id] || '';
+        picker.includeDomains = OVERRIDE_KEYS.includes(id) ? ['sensor', 'binary_sensor'] : ['sensor'];
       }
     });
   }
@@ -366,35 +377,37 @@ class LivoltekPowerCardEditor extends HTMLElement {
       this._config = {
         ...this._config,
         title: this.shadowRoot.getElementById('title').value,
-        pv_power: this.shadowRoot.getElementById('pv_power').value,
-        grid_power: this.shadowRoot.getElementById('grid_power').value,
-        battery_power: this.shadowRoot.getElementById('battery_power').value,
-        battery_soc: this.shadowRoot.getElementById('battery_soc').value,
-        load_power: this.shadowRoot.getElementById('load_power').value,
+        pv_power: this.shadowRoot.getElementById('pv_power').value ?? this._config.pv_power,
+        grid_power: this.shadowRoot.getElementById('grid_power').value ?? this._config.grid_power,
+        battery_power: this.shadowRoot.getElementById('battery_power').value ?? this._config.battery_power,
+        battery_soc: this.shadowRoot.getElementById('battery_soc').value ?? this._config.battery_soc,
+        load_power: this.shadowRoot.getElementById('load_power').value ?? this._config.load_power,
         show_units_pv_power: this.shadowRoot.getElementById('show_units_pv_power')?.checked ?? true,
         show_units_grid_power: this.shadowRoot.getElementById('show_units_grid_power')?.checked ?? true,
         show_units_battery_power: this.shadowRoot.getElementById('show_units_battery_power')?.checked ?? true,
         show_units_battery_soc: this.shadowRoot.getElementById('show_units_battery_soc')?.checked ?? true,
         show_units_load_power: this.shadowRoot.getElementById('show_units_load_power')?.checked ?? true,
-        active_sensor_pv: this.shadowRoot.getElementById('active_sensor_pv')?.value || this.shadowRoot.getElementById('pv_power')?.value,
-        active_sensor_battery: this.shadowRoot.getElementById('active_sensor_battery')?.value || this.shadowRoot.getElementById('battery_power')?.value,
-        active_sensor_grid: this.shadowRoot.getElementById('active_sensor_grid')?.value || this.shadowRoot.getElementById('grid_power')?.value,
-        active_sensor_load: this.shadowRoot.getElementById('active_sensor_load')?.value || this.shadowRoot.getElementById('load_power')?.value,
-        connected_sensor_pv: this.shadowRoot.getElementById('connected_sensor_pv')?.value || this.shadowRoot.getElementById('pv_power')?.value,
-        connected_sensor_battery: this.shadowRoot.getElementById('connected_sensor_battery')?.value || this.shadowRoot.getElementById('battery_power')?.value,
-        connected_sensor_grid: this.shadowRoot.getElementById('connected_sensor_grid')?.value || this.shadowRoot.getElementById('grid_power')?.value,
-        connected_sensor_load: this.shadowRoot.getElementById('connected_sensor_load')?.value || this.shadowRoot.getElementById('load_power')?.value,
       };
+      OVERRIDE_KEYS.forEach(key => {
+        const value = this.shadowRoot.getElementById(key)?.value;
+        if (value) this._config[key] = value;
+        else delete this._config[key];
+      });
       this.configChanged(this._config);
     };
-    this.shadowRoot.querySelectorAll('input, ha-entity-picker, ha-switch').forEach(el => {
+    this.shadowRoot.querySelectorAll('input, ha-switch').forEach(el => {
       el.addEventListener('change', update);
-      el.addEventListener('blur', update);
+    });
+    this.shadowRoot.querySelectorAll('ha-entity-picker').forEach(el => {
+      el.addEventListener('value-changed', (e) => {
+        el.value = e.detail?.value || '';
+        update();
+      });
     });
 
     const inverterSelect = this.shadowRoot.getElementById('inverter_select');
     if (inverterSelect) {
-      inverterSelect.addEventListener('change', (e) => {
+      inverterSelect.addEventListener('change', () => {
         const id = inverterSelect.value;
         this._deviceInverter = id;
         if (id) {
@@ -405,4 +418,6 @@ class LivoltekPowerCardEditor extends HTMLElement {
   }
 }
 
-customElements.define('livoltek-power-card-editor', LivoltekPowerCardEditor);
+if (!customElements.get('livoltek-power-card-editor')) {
+  customElements.define('livoltek-power-card-editor', LivoltekPowerCardEditor);
+}

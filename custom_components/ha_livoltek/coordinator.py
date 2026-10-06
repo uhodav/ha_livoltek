@@ -6,8 +6,9 @@ Two coordinators split the API load:
 """
 from __future__ import annotations
 
+import asyncio
 import logging
-import time
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from typing import Any
 
@@ -26,7 +27,6 @@ from .const import (
     CONF_ENABLED_GROUPS,
     CONF_SITE_ID,
     DOMAIN,
-    ENERGY_REPORT_INTERVAL,
     GROUP_ALARMS,
     GROUP_DAILY_ENERGY,
     GROUP_DEVICE_BASIC,
@@ -41,6 +41,7 @@ from .const import (
     GROUP_SOCIAL,
     GROUP_STORAGE,
     SCAN_INTERVAL_SLOW,
+    STATIC_DATA_INTERVAL,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -49,7 +50,7 @@ _LOGGER = logging.getLogger(__name__)
 # ── Base coordinator ─────────────────────────────────────────────────
 
 class _LivoltekBaseCoordinator(DataUpdateCoordinator[dict[str, Any]]):
-    """Base coordinator with startup jitter, exponential backoff and token persistence."""
+    """Base coordinator with exponential backoff and token persistence."""
 
     def __init__(
         self,
@@ -70,7 +71,6 @@ class _LivoltekBaseCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._entry = entry
         self._consecutive_failures: int = 0
         self._normal_interval = update_interval
-        self._first_refresh = True
 
     # ── Backoff ──────────────────────────────────────────────────────
 
@@ -78,7 +78,7 @@ class _LivoltekBaseCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Increase consecutive failure count and apply exponential backoff."""
         self._consecutive_failures += 1
         idx = min(self._consecutive_failures - 1, len(BACKOFF_INTERVALS) - 1)
-        self.update_interval = BACKOFF_INTERVALS[idx]
+        self.update_interval = max(self._normal_interval, BACKOFF_INTERVALS[idx])
         _LOGGER.debug(
             "%s: failure #%d, backing off to %s",
             self.name, self._consecutive_failures, self.update_interval,
@@ -96,37 +96,69 @@ class _LivoltekBaseCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     # ── Token helpers ────────────────────────────────────────────────
 
-    async def _ensure_token(self) -> None:
-        """Call api.ensure_token, converting auth errors to ConfigEntryAuthFailed."""
-        try:
-            await self._api.ensure_token()
-        except LivoltekAuthError as err:
-            raise ConfigEntryAuthFailed(str(err)) from err
-
     def _persist_token(self) -> None:
         """Save refreshed auth token to config entry data."""
         if self._api.auth_token and self._api.auth_token != self._entry.data.get(CONF_AUTH_TOKEN):
             new_data = {**self._entry.data, CONF_AUTH_TOKEN: self._api.auth_token}
             self.hass.config_entries.async_update_entry(self._entry, data=new_data)
 
-    # ── Jitter ───────────────────────────────────────────────────────
-
     async def _async_update_data(self) -> dict[str, Any]:
+        """Fetch data, translating API errors and applying backoff."""
+        try:
+            await self._api.ensure_token()
+            result = await self._async_fetch()
+        except LivoltekAuthError as err:
+            self._record_failure()
+            raise ConfigEntryAuthFailed(str(err)) from err
+        except LivoltekApiError as err:
+            self._record_failure()
+            raise UpdateFailed(f"{self.name}: {err}") from err
+
+        self._record_success()
+        self._persist_token()
+        return result
+
+    async def _async_fetch(self) -> dict[str, Any]:
         """Override in subclass."""
         raise NotImplementedError
 
-    async def _async_update_data_with_jitter(self) -> dict[str, Any]:
-        """Wrap update with optional startup jitter."""
-        if self._first_refresh:
-            self._first_refresh = False
-            # Skip jitter on very first refresh so HA shows data quickly
-        return await self._async_update_data()
+
+def _first_if_list(value: Any) -> Any:
+    if isinstance(value, list):
+        return value[0] if value else {}
+    return value
+
+
+def _normalize_alarms(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        records = value.get("list") or value.get("records") or []
+        total = value.get("count") or value.get("total") or len(records)
+        return {"records": records, "total": total}
+    if isinstance(value, list):
+        return {"records": value, "total": len(value)}
+    return {"records": [], "total": 0}
+
+
+def _identity(value: Any) -> Any:
+    return value
+
+
+# (fetch, transform, required)
+_Request = tuple[Callable[[], Awaitable[Any]], Callable[[Any], Any], bool]
+
+_MEDIUM_RESULT_KEYS = (
+    "power_flow", "overview", "storage", "device_electricity", "social",
+    "alarms", "site_details", "device_details", "realtime",
+    "site_installer", "site_owner", "device_basic", "device_description",
+)
 
 
 # ── Medium coordinator (public API) ──────────────────────────────────
 
 class LivoltekMediumCoordinator(_LivoltekBaseCoordinator):
     """Polls public API at user-configurable interval."""
+
+    _MAX_PARALLEL_REQUESTS = 4
 
     def __init__(
         self,
@@ -149,165 +181,100 @@ class LivoltekMediumCoordinator(_LivoltekBaseCoordinator):
         self._device_id = entry.data.get(CONF_DEVICE_ID)
         self._has_control = has_control
         self._enabled = set(entry.data.get(CONF_ENABLED_GROUPS, ALL_GROUPS))
+        self._static_cache: dict[str, Any] = {}
+        self._static_fetched_at: float | None = None
+        self._semaphore = asyncio.Semaphore(self._MAX_PARALLEL_REQUESTS)
 
-    async def _async_update_data(self) -> dict[str, Any]:
+    def _requests(self) -> dict[str, _Request]:
+        """Requests polled on every update."""
+        api, site_id, sn = self._api, self._site_id, self._device_sn
+        requests: dict[str, _Request] = {}
+        if GROUP_POWER_FLOW in self._enabled:
+            requests["power_flow"] = (lambda: api.get_current_power_flow(site_id), _identity, True)
+        if GROUP_OVERVIEW in self._enabled:
+            requests["overview"] = (lambda: api.get_site_overview(site_id), _identity, True)
+        if GROUP_STORAGE in self._enabled:
+            requests["storage"] = (lambda: api.get_storage_info(site_id), _identity, False)
+        if GROUP_DEVICE_ELECTRICITY in self._enabled and self._device_id:
+            requests["device_electricity"] = (lambda: api.get_device_real_electricity(self._device_id), _identity, False)
+        if GROUP_ALARMS in self._enabled:
+            requests["alarms"] = (lambda: api.get_device_alarms(site_id, sn), _normalize_alarms, False)
+        if GROUP_SITE_DETAILS in self._enabled:
+            requests["site_details"] = (lambda: api.get_site_details(site_id), _identity, False)
+        if GROUP_DEVICE_DETAILS in self._enabled:
+            requests["device_details"] = (lambda: api.get_device_details(site_id, sn), _identity, False)
+        if GROUP_REALTIME in self._enabled:
+            requests["realtime"] = (lambda: api.get_device_realtime(site_id, sn), _identity, False)
+        if GROUP_DEVICE_BASIC in self._enabled:
+            requests["device_basic"] = (lambda: api.get_device_basic_data(sn), _first_if_list, False)
+        return requests
+
+    def _static_requests(self) -> dict[str, _Request]:
+        """Requests for rarely changing data, polled every STATIC_DATA_INTERVAL."""
+        api, site_id, sn = self._api, self._site_id, self._device_sn
+        requests: dict[str, _Request] = {}
+        if GROUP_SOCIAL in self._enabled:
+            requests["social"] = (lambda: api.get_social_contribution(site_id), _identity, False)
+        if GROUP_SITE_INSTALLER in self._enabled:
+            requests["site_installer"] = (lambda: api.get_site_installer(site_id), _first_if_list, False)
+        if GROUP_SITE_OWNER in self._enabled:
+            requests["site_owner"] = (lambda: api.get_site_owner(site_id), _first_if_list, False)
+        if self._has_control:
+            requests["device_description"] = (lambda: api.get_device_description(sn), _identity, False)
+        return requests
+
+    async def _fetch_one(self, key: str, request: _Request) -> Any:
+        """Fetch one endpoint; optional endpoints return None on API errors."""
+        fetch, transform, required = request
+        async with self._semaphore:
+            try:
+                return transform(await fetch() or {}) or {}
+            except LivoltekAuthError:
+                raise
+            except LivoltekApiError as err:
+                if required:
+                    raise
+                _LOGGER.warning("%s not available for %s: %s", key, self._device_sn, err)
+                return None
+
+    async def _fetch_all(self, requests: dict[str, _Request]) -> dict[str, Any]:
+        keys = list(requests)
+        values = await asyncio.gather(
+            *(self._fetch_one(key, requests[key]) for key in keys),
+            return_exceptions=True,
+        )
+        errors = [v for v in values if isinstance(v, BaseException)]
+        if errors:
+            raise next((e for e in errors if isinstance(e, LivoltekAuthError)), errors[0])
+        return dict(zip(keys, values))
+
+    async def _async_fetch(self) -> dict[str, Any]:
         """Fetch data from Livoltek public API."""
-        await self._ensure_token()
+        now = self.hass.loop.time()
+        static_due = (
+            self._static_fetched_at is None
+            or now - self._static_fetched_at >= STATIC_DATA_INTERVAL.total_seconds()
+        )
+        requests = self._requests()
+        static_requests = self._static_requests() if static_due else {}
 
-        try:
-            result: dict[str, Any] = {}
+        fetched = await self._fetch_all({**requests, **static_requests})
 
-            # ── Power flow ───────────────────────────────────────────
-            if GROUP_POWER_FLOW in self._enabled:
-                result["power_flow"] = await self._api.get_current_power_flow(self._site_id) or {}
+        if static_due:
+            for key in static_requests:
+                if fetched[key] is not None:
+                    self._static_cache[key] = fetched[key]
+            if all(fetched[key] is not None for key in static_requests):
+                self._static_fetched_at = now
+
+        previous = self.data or {}
+        result: dict[str, Any] = {}
+        for key in _MEDIUM_RESULT_KEYS:
+            if key in requests:
+                result[key] = fetched[key] if fetched[key] is not None else {}
             else:
-                result["power_flow"] = {}
-
-            # ── Overview ─────────────────────────────────────────────
-            if GROUP_OVERVIEW in self._enabled:
-                result["overview"] = await self._api.get_site_overview(self._site_id) or {}
-            else:
-                result["overview"] = {}
-
-            # ── Storage (ESS) ────────────────────────────────────────
-            if GROUP_STORAGE in self._enabled:
-                try:
-                    result["storage"] = await self._api.get_storage_info(self._site_id) or {}
-                except LivoltekApiError:
-                    _LOGGER.error("Storage info not available for site %s", self._site_id)
-                    result["storage"] = {}
-            else:
-                result["storage"] = {}
-
-            # ── Device electricity ───────────────────────────────────
-            if GROUP_DEVICE_ELECTRICITY in self._enabled and self._device_id:
-                try:
-                    result["device_electricity"] = await self._api.get_device_real_electricity(self._device_id) or {}
-                except LivoltekApiError:
-                    _LOGGER.error("Device electricity not available for device %s", self._device_id)
-                    result["device_electricity"] = {}
-            else:
-                result["device_electricity"] = {}
-
-            # ── Social contribution ──────────────────────────────────
-            if GROUP_SOCIAL in self._enabled:
-                try:
-                    result["social"] = await self._api.get_social_contribution(self._site_id) or {}
-                except LivoltekApiError:
-                    _LOGGER.error("Social contribution not available for site %s", self._site_id)
-                    result["social"] = {}
-            else:
-                result["social"] = {}
-
-            # ── Alarms ───────────────────────────────────────────────
-            if GROUP_ALARMS in self._enabled:
-                try:
-                    alarms_resp = await self._api.get_device_alarms(self._site_id, self._device_sn)
-                    if isinstance(alarms_resp, dict):
-                        records = alarms_resp.get("list") or alarms_resp.get("records") or []
-                        total = alarms_resp.get("count") or alarms_resp.get("total") or len(records)
-                        result["alarms"] = {"records": records, "total": total}
-                    elif isinstance(alarms_resp, list):
-                        result["alarms"] = {"records": alarms_resp, "total": len(alarms_resp)}
-                    else:
-                        result["alarms"] = {"records": [], "total": 0}
-                except LivoltekApiError:
-                    _LOGGER.error("Alarms not available for device %s", self._device_sn)
-                    result["alarms"] = {}
-            else:
-                result["alarms"] = {}
-
-            # ── Site details ─────────────────────────────────────────
-            if GROUP_SITE_DETAILS in self._enabled:
-                try:
-                    result["site_details"] = await self._api.get_site_details(self._site_id) or {}
-                except LivoltekApiError:
-                    _LOGGER.error("Site details not available for site %s", self._site_id)
-                    result["site_details"] = {}
-            else:
-                result["site_details"] = {}
-
-            # ── Device details ───────────────────────────────────────
-            if GROUP_DEVICE_DETAILS in self._enabled:
-                try:
-                    result["device_details"] = await self._api.get_device_details(self._site_id, self._device_sn) or {}
-                except LivoltekApiError:
-                    _LOGGER.error("Device details not available for %s", self._device_sn)
-                    result["device_details"] = {}
-            else:
-                result["device_details"] = {}
-
-            # ── Realtime technical parameters ────────────────────────
-            if GROUP_REALTIME in self._enabled:
-                try:
-                    result["realtime"] = await self._api.get_device_realtime(self._site_id, self._device_sn) or {}
-                except LivoltekApiError:
-                    _LOGGER.error("Realtime data not available for %s", self._device_sn)
-                    result["realtime"] = {}
-            else:
-                result["realtime"] = {}
-
-            # ── Site installer ───────────────────────────────────────
-            if GROUP_SITE_INSTALLER in self._enabled:
-                try:
-                    raw_inst = await self._api.get_site_installer(self._site_id)
-                    if isinstance(raw_inst, list):
-                        result["site_installer"] = raw_inst[0] if raw_inst else {}
-                    else:
-                        result["site_installer"] = raw_inst or {}
-                except LivoltekApiError:
-                    _LOGGER.error("Site installer not available for site %s", self._site_id)
-                    result["site_installer"] = {}
-            else:
-                result["site_installer"] = {}
-
-            # ── Site owner ───────────────────────────────────────────
-            if GROUP_SITE_OWNER in self._enabled:
-                try:
-                    raw_owner = await self._api.get_site_owner(self._site_id)
-                    if isinstance(raw_owner, list):
-                        result["site_owner"] = raw_owner[0] if raw_owner else {}
-                    else:
-                        result["site_owner"] = raw_owner or {}
-                except LivoltekApiError:
-                    _LOGGER.error("Site owner not available for site %s", self._site_id)
-                    result["site_owner"] = {}
-            else:
-                result["site_owner"] = {}
-
-            # ── Device basic data ────────────────────────────────────
-            if GROUP_DEVICE_BASIC in self._enabled:
-                try:
-                    raw_basic = await self._api.get_device_basic_data(self._device_sn)
-                    if isinstance(raw_basic, list):
-                        result["device_basic"] = raw_basic[0] if raw_basic else {}
-                    else:
-                        result["device_basic"] = raw_basic or {}
-                except LivoltekApiError:
-                    _LOGGER.error("Device basic data not available for %s", self._device_sn)
-                    result["device_basic"] = {}
-            else:
-                result["device_basic"] = {}
-
-            # ── Device description (BESS capabilities) ───────────────
-            device_description = None
-            if self._has_control:
-                try:
-                    device_description = await self._api.get_device_description(self._device_sn)
-                except LivoltekApiError as err:
-                    _LOGGER.error("Device description not available for %s: %s", self._device_sn, err)
-            result["device_description"] = device_description or {}
-
-            self._record_success()
-            self._persist_token()
-            return result
-
-        except LivoltekAuthError as err:
-            self._record_failure()
-            raise ConfigEntryAuthFailed(str(err)) from err
-        except LivoltekApiError as err:
-            self._record_failure()
-            raise UpdateFailed(f"Medium coordinator error: {err}") from err
+                result[key] = self._static_cache.get(key) or previous.get(key) or {}
+        return result
 
 
 # ── Slow coordinator (daily energy) ──────────────────────────────────
@@ -331,28 +298,15 @@ class LivoltekSlowCoordinator(_LivoltekBaseCoordinator):
         self._device_id = entry.data.get(CONF_DEVICE_ID)
         self._enabled = set(entry.data.get(CONF_ENABLED_GROUPS, ALL_GROUPS))
 
-    async def _async_update_data(self) -> dict[str, Any]:
+    async def _async_fetch(self) -> dict[str, Any]:
         """Fetch daily energy report."""
-        await self._ensure_token()
-
-        result: dict[str, Any] = {}
+        if GROUP_DAILY_ENERGY not in self._enabled or not self._device_id:
+            return {"daily_energy": {}}
         try:
-            if GROUP_DAILY_ENERGY in self._enabled and self._device_id:
-                try:
-                    result["daily_energy"] = await self._api.get_daily_energy_report(self._device_id) or {}
-                except LivoltekApiError:
-                    _LOGGER.error("Daily energy report not available for device %s", self._device_id)
-                    result["daily_energy"] = {}
-            else:
-                result["daily_energy"] = {}
-
-            self._record_success()
-            self._persist_token()
-            return result
-
-        except LivoltekAuthError as err:
-            self._record_failure()
-            raise ConfigEntryAuthFailed(str(err)) from err
+            daily = await self._api.get_daily_energy_report(self._device_id) or {}
+        except LivoltekAuthError:
+            raise
         except LivoltekApiError as err:
-            self._record_failure()
-            raise UpdateFailed(f"Slow coordinator error: {err}") from err
+            _LOGGER.warning("Daily energy report not available for device %s: %s", self._device_id, err)
+            daily = (self.data or {}).get("daily_energy") or {}
+        return {"daily_energy": daily}

@@ -1,6 +1,7 @@
 """Config flow for Livoltek integration."""
 import hashlib
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 import voluptuous as vol
@@ -13,6 +14,8 @@ from .const import (
     ALL_GROUPS,
     CONF_ACCOUNT,
     CONF_AUTH_TOKEN,
+    CONF_BATTERY_CAPACITY,
+    CONF_BATTERY_RESERVE_SOC,
     CONF_DEVICE_ID,
     CONF_DEVICE_MODEL,
     CONF_DEVICE_SN,
@@ -26,6 +29,8 @@ from .const import (
     CONF_TOKEN,
     CONF_UPDATE_INTERVAL,
     CONF_WORKMODE,
+    DEFAULT_BATTERY_CAPACITY,
+    DEFAULT_BATTERY_RESERVE_SOC,
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
     GROUP_LABELS,
@@ -91,13 +96,9 @@ class LivoltekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             except LivoltekApiError as err:
                 _LOGGER.error("Livoltek API error: %s", err)
                 errors["base"] = "cannot_connect"
-            except Exception as err:
-                import traceback
-                print("[LIVOLTEK DEBUG] Unexpected error during Livoltek login:")
-                traceback.print_exc()
-                print(f"[LIVOLTEK DEBUG] Exception: {err}")
-                print(f"[LIVOLTEK DEBUG] Request params: server_type={self._server_type}, secuid={self._secuid}, key={self._key}, token={self._token}")
-                errors["base"] = f"unknown: {err}"
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception("Unexpected error during Livoltek login")
+                errors["base"] = "unknown"
             finally:
                 await api.close()
 
@@ -125,8 +126,16 @@ class LivoltekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         )
                     ),
                     vol.Required(CONF_SECUID, default=defaults[CONF_SECUID]): str,
-                    vol.Required(CONF_KEY, default=defaults[CONF_KEY]): str,
-                    vol.Required(CONF_TOKEN, default=defaults[CONF_TOKEN]): str,
+                    vol.Required(CONF_KEY, default=defaults[CONF_KEY]): selector.TextSelector(
+                        selector.TextSelectorConfig(
+                            type=selector.TextSelectorType.PASSWORD
+                        )
+                    ),
+                    vol.Required(CONF_TOKEN, default=defaults[CONF_TOKEN]): selector.TextSelector(
+                        selector.TextSelectorConfig(
+                            type=selector.TextSelectorType.PASSWORD
+                        )
+                    ),
                 }
             ),
             errors=errors,
@@ -254,7 +263,7 @@ class LivoltekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     ),
                     vol.Required(
                         CONF_UPDATE_INTERVAL, default=DEFAULT_UPDATE_INTERVAL
-                    ): vol.All(vol.Coerce(int), vol.Range(min=1, max=60)),
+                    ): vol.All(vol.Coerce(int), vol.Range(min=MIN_UPDATE_INTERVAL, max=60)),
                 }
             ),
             errors=errors,
@@ -343,6 +352,61 @@ class LivoltekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             ),
         )
 
+    async def async_step_reauth(self, entry_data: Mapping[str, Any]):
+        """Start reauthentication when the stored credentials stop working."""
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(self, user_input: dict[str, Any] | None = None):
+        """Ask for new API credentials."""
+        errors: dict[str, str] = {}
+        entry = self._get_reauth_entry()
+
+        if user_input is not None:
+            secuid = user_input[CONF_SECUID].strip()
+            key = user_input[CONF_KEY].strip()
+            token = user_input[CONF_TOKEN].strip()
+            server_type = entry.data[CONF_SERVER_TYPE]
+            session = async_get_clientsession(self.hass)
+            api = LivoltekApi(SERVERS[server_type], secuid, key, token, session=session, server_type=server_type)
+            try:
+                auth_token = await api.login()
+            except LivoltekAuthError:
+                errors["base"] = "invalid_auth"
+            except LivoltekApiError:
+                errors["base"] = "cannot_connect"
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception("Unexpected error during Livoltek login")
+                errors["base"] = "unknown"
+            else:
+                return self.async_update_reload_and_abort(
+                    entry,
+                    data={
+                        **entry.data,
+                        CONF_SECUID: secuid,
+                        CONF_KEY: key,
+                        CONF_TOKEN: token,
+                        CONF_AUTH_TOKEN: auth_token,
+                    },
+                )
+            finally:
+                await api.close()
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_SECUID, default=entry.data.get(CONF_SECUID, "")): str,
+                    vol.Required(CONF_KEY): str,
+                    vol.Required(CONF_TOKEN): selector.TextSelector(
+                        selector.TextSelectorConfig(
+                            type=selector.TextSelectorType.PASSWORD
+                        )
+                    ),
+                }
+            ),
+            errors=errors,
+        )
+
     @staticmethod
     def async_get_options_flow(config_entry):
         """Return the options flow handler."""
@@ -386,12 +450,9 @@ class LivoltekOptionsFlow(config_entries.OptionsFlow):
                 errors["base"] = "invalid_auth"
             except LivoltekApiError:
                 errors["base"] = "cannot_connect"
-            except Exception as err:
-                import traceback
-                print("[LIVOLTEK DEBUG] Unexpected error during options login:")
-                traceback.print_exc()
-                print(f"[LIVOLTEK DEBUG] Exception: {err}")
-                errors["base"] = f"unknown: {err}"
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception("Unexpected error during Livoltek login")
+                errors["base"] = "unknown"
             finally:
                 await api.close()
 
@@ -420,7 +481,11 @@ class LivoltekOptionsFlow(config_entries.OptionsFlow):
                     vol.Required(
                         CONF_KEY,
                         default=cur.get(CONF_KEY, ""),
-                    ): str,
+                    ): selector.TextSelector(
+                        selector.TextSelectorConfig(
+                            type=selector.TextSelectorType.PASSWORD
+                        )
+                    ),
                     vol.Required(
                         CONF_TOKEN,
                         default=cur.get(CONF_TOKEN, ""),
@@ -449,6 +514,8 @@ class LivoltekOptionsFlow(config_entries.OptionsFlow):
                     interval = MIN_UPDATE_INTERVAL
                 self._new_data[CONF_UPDATE_INTERVAL] = interval
                 self._new_data[CONF_ENABLED_GROUPS] = selected
+                self._new_data[CONF_BATTERY_CAPACITY] = user_input.get(CONF_BATTERY_CAPACITY, DEFAULT_BATTERY_CAPACITY)
+                self._new_data[CONF_BATTERY_RESERVE_SOC] = user_input.get(CONF_BATTERY_RESERVE_SOC, DEFAULT_BATTERY_RESERVE_SOC)
                 return await self.async_step_control()
 
         current_interval = cur.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)
@@ -476,6 +543,14 @@ class LivoltekOptionsFlow(config_entries.OptionsFlow):
                             multiple=True,
                         )
                     ),
+                    vol.Required(
+                        CONF_BATTERY_CAPACITY,
+                        default=cur.get(CONF_BATTERY_CAPACITY, DEFAULT_BATTERY_CAPACITY),
+                    ): vol.All(vol.Coerce(float), vol.Range(min=0, max=1000)),
+                    vol.Required(
+                        CONF_BATTERY_RESERVE_SOC,
+                        default=cur.get(CONF_BATTERY_RESERVE_SOC, DEFAULT_BATTERY_RESERVE_SOC),
+                    ): vol.All(vol.Coerce(int), vol.Range(min=0, max=90)),
                 }
             ),
             errors=errors,

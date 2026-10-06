@@ -2,21 +2,19 @@
 import logging
 
 from homeassistant.components.button import ButtonEntity
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity import EntityCategory
 
+from .api import LivoltekApiError
 from .const import (
     CONF_ACCOUNT,
-    CONF_DEVICE_MODEL,
     CONF_DEVICE_SN,
     CONF_PASSWORD,
     CONF_SITE_ID,
-    CONF_SITE_NAME,
-    CONTROL_TYPE_MAP,
     DOMAIN,
     GROUP_DEVICE_DETAILS,
-    GROUP_LABELS,
-    GROUP_LABELS_UK,
 )
+from .sensor import _build_device_info as build_group_device_info, _get_group_label
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,28 +30,10 @@ BUTTON_DEFINITIONS = [
 
 def _build_device_info(entry_data: dict, coordinator_data: dict | None = None, hass=None) -> dict:
     """Build device info dict for the device_details group."""
-    site_id = entry_data.get(CONF_SITE_ID, "")
-    device_sn = entry_data.get(CONF_DEVICE_SN, "")
-    device_model = entry_data.get(CONF_DEVICE_MODEL, "inverter")
-    product_type = entry_data.get("product_type", "")
-
-    sw_version = None
-    if coordinator_data:
-        device_details = coordinator_data.get("device_details") or {}
-        sw_version = device_details.get("firmwareVersion")
-
-    group = GROUP_DEVICE_DETAILS
-    lang = getattr(hass.config, "language", "en") if hass else "en"
-    labels = GROUP_LABELS_UK if lang and lang.startswith("uk") else GROUP_LABELS
-    group_label = labels.get(group, group)
-
-    return {
-        "identifiers": {(DOMAIN, f"{site_id}_{device_sn}_{group}")},
-        "name": f"{device_sn} ({group_label})",
-        "manufacturer": "LIVOLTEK",
-        "model": product_type or device_model,
-        "sw_version": sw_version,
-    }
+    return build_group_device_info(
+        entry_data, coordinator_data,
+        group=GROUP_DEVICE_DETAILS, group_label=_get_group_label(hass, GROUP_DEVICE_DETAILS),
+    )
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
@@ -125,9 +105,12 @@ class LivoltekControlButton(ButtonEntity):
         pwd_md5 = self._entry_data.get(CONF_PASSWORD, "")
         device_sn = self._entry_data.get(CONF_DEVICE_SN, "")
 
-        await self._api.remote_start_or_stop(
-            account=account,
-            pwd_md5=pwd_md5,
-            sn=device_sn,
-            control_type=self._control_type,
-        )
+        try:
+            await self._api.remote_start_or_stop(
+                account=account,
+                pwd_md5=pwd_md5,
+                sn=device_sn,
+                control_type=self._control_type,
+            )
+        except LivoltekApiError as err:
+            raise HomeAssistantError(f"Livoltek command failed: {err}") from err

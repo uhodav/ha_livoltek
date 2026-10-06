@@ -3,23 +3,22 @@ import json
 import logging
 
 from homeassistant.components.select import SelectEntity
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .api import LivoltekApiError
 from .const import (
     CONF_ACCOUNT,
-    CONF_DEVICE_MODEL,
     CONF_DEVICE_SN,
     CONF_PASSWORD,
     CONF_SITE_ID,
-    CONF_SITE_NAME,
     CONF_WORKMODE,
     DOMAIN,
     GROUP_DEVICE_DETAILS,
-    GROUP_LABELS,
-    GROUP_LABELS_UK,
     WORK_MODE_MAP,
 )
+from .sensor import _build_device_info as build_group_device_info, _get_group_label
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,28 +42,10 @@ def _parse_supported_modes(coordinator_data: dict) -> list[dict]:
 
 def _build_device_info(entry_data: dict, coordinator_data: dict | None = None, hass=None) -> dict:
     """Build device info dict for the device_details group."""
-    site_id = entry_data.get(CONF_SITE_ID, "")
-    device_sn = entry_data.get(CONF_DEVICE_SN, "")
-    device_model = entry_data.get(CONF_DEVICE_MODEL, "inverter")
-    product_type = entry_data.get("product_type", "")
-
-    sw_version = None
-    if coordinator_data:
-        device_details = coordinator_data.get("device_details") or {}
-        sw_version = device_details.get("firmwareVersion")
-
-    group = GROUP_DEVICE_DETAILS
-    lang = getattr(hass.config, "language", "en") if hass else "en"
-    labels = GROUP_LABELS_UK if lang and lang.startswith("uk") else GROUP_LABELS
-    group_label = labels.get(group, group)
-
-    return {
-        "identifiers": {(DOMAIN, f"{site_id}_{device_sn}_{group}")},
-        "name": f"{device_sn} ({group_label})",
-        "manufacturer": "LIVOLTEK",
-        "model": product_type or device_model,
-        "sw_version": sw_version,
-    }
+    return build_group_device_info(
+        entry_data, coordinator_data,
+        group=GROUP_DEVICE_DETAILS, group_label=_get_group_label(hass, GROUP_DEVICE_DETAILS),
+    )
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
@@ -109,6 +90,8 @@ class LivoltekWorkModeSelect(CoordinatorEntity, SelectEntity):
         self._attr_has_entity_name = True
         self._attr_icon = "mdi:cog-play"
         self._attr_entity_category = EntityCategory.CONFIG
+        # The API does not report the actual work mode, so the shown option can be stale
+        self._attr_entity_registry_enabled_default = False
 
     @property
     def device_info(self):
@@ -155,19 +138,21 @@ class LivoltekWorkModeSelect(CoordinatorEntity, SelectEntity):
             mode_value = _MODE_TO_VALUE.get(option)
 
         if mode_value is None:
-            _LOGGER.error("Unknown work mode option: %s", option)
-            return
+            raise HomeAssistantError(f"Unknown work mode option: {option}")
 
         account = self._entry_data.get(CONF_ACCOUNT, "")
         pwd_md5 = self._entry_data.get(CONF_PASSWORD, "")
         device_sn = self._entry_data.get(CONF_DEVICE_SN, "")
 
-        await self._api.set_work_mode(
-            account=account,
-            pwd_md5=pwd_md5,
-            sn=device_sn,
-            work_mode=int(mode_value),
-        )
+        try:
+            await self._api.set_work_mode(
+                account=account,
+                pwd_md5=pwd_md5,
+                sn=device_sn,
+                work_mode=int(mode_value),
+            )
+        except LivoltekApiError as err:
+            raise HomeAssistantError(f"Failed to set work mode: {err}") from err
 
         # Track selected mode in runtime
         runtime = self._hass.data.get(DOMAIN, {}).get(self._entry.entry_id, {})

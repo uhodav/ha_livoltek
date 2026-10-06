@@ -41,6 +41,15 @@
           "account": "Account",
           "password": "Password"
         }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate Livoltek",
+        "description": "The Livoltek API rejected the stored credentials. Enter new API credentials.",
+        "data": {
+          "secuid": "Security ID (secuid)",
+          "key": "API Key",
+          "token": "User Token (from Livoltek portal)"
+        }
       }
     },
     "error": {
@@ -54,6 +63,10 @@
       "unknown": "An unknown error occurred.",
       "bad_request": "Bad request (400). Please check your device selection and credentials.",
       "no_groups_selected": "At least one data group must be selected."
+    },
+    "abort": {
+      "already_configured": "This device is already configured.",
+      "reauth_successful": "Re-authentication was successful."
     }
   },
   "options": {
@@ -73,7 +86,9 @@
         "description": "Set polling interval and choose data groups.",
         "data": {
           "update_interval": "Update interval (minutes)",
-          "enabled_groups": "Enabled data groups"
+          "enabled_groups": "Enabled data groups",
+          "battery_capacity": "Battery capacity (kWh, 0 = estimate from BMS)",
+          "battery_reserve_soc": "Battery reserve SoC (%)"
         }
       },
       "control": {
@@ -123,6 +138,12 @@
       },
       "power_flow_timestamp": {
         "name": "Power Flow Update Time"
+      },
+      "battery_time_to_full": {
+        "name": "Battery Time to Full"
+      },
+      "battery_time_to_empty": {
+        "name": "Battery Time to Empty"
       },
       "current_power": {
         "name": "Current Power"
@@ -192,9 +213,6 @@
       },
       "bms_capacity": {
         "name": "BMS Capacity"
-      },
-      "current_soc": {
-        "name": "Current Battery SoC"
       },
       "battery_cycle_count": {
         "name": "Battery Cycle Count"
@@ -331,9 +349,6 @@
       "battery_current": {
         "name": "Battery Current"
       },
-      "battery_soc_realtime": {
-        "name": "Battery SoC (Realtime)"
-      },
       "eps_voltage": {
         "name": "EPS Voltage"
       },
@@ -417,6 +432,24 @@
       },
       "device_load_day": {
         "name": "Daily Load (Device)"
+      },
+      "pv_total_energy": {
+        "name": "PV Energy Total"
+      },
+      "grid_import_total_energy": {
+        "name": "Grid Import Total"
+      },
+      "grid_export_total_energy": {
+        "name": "Grid Export Total"
+      },
+      "battery_charge_total_energy": {
+        "name": "Battery Charge Total"
+      },
+      "battery_discharge_total_energy": {
+        "name": "Battery Discharge Total"
+      },
+      "load_total_energy": {
+        "name": "Load Consumption Total"
       }
     },
     "button": {

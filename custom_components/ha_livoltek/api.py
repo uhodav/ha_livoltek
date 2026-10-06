@@ -10,6 +10,8 @@ from typing import Any
 
 import aiohttp
 
+from homeassistant.util import dt as dt_util
+
 from .const import (
     SERVER_INTERNATIONAL,
     TOKEN_REFRESH_BUFFER,
@@ -86,9 +88,9 @@ def _decode_token_expiry(token: str) -> int | None:
     try:
         payload_part = token.split(".")[1]
         padded = payload_part + "=" * (4 - len(payload_part) % 4)
-        payload = json_mod.loads(base64.b64decode(padded))
+        payload = json_mod.loads(base64.urlsafe_b64decode(padded))
         return int(payload["exp"])
-    except (IndexError, KeyError, ValueError, binascii.Error, Exception):
+    except (IndexError, KeyError, TypeError, ValueError, binascii.Error):
         _LOGGER.debug("Could not decode JWT expiry, will use reactive refresh")
         return None
 
@@ -116,7 +118,7 @@ class LivoltekApi:
         self._key = key
         self._user_token = user_token
         self._auth_token = auth_token
-        self._token_expiry: int | None = None
+        self._token_expiry: int | None = _decode_token_expiry(auth_token) if auth_token else None
         self._token_lock = asyncio.Lock()
         self._session = session  # HA shared session or None
         self._owns_session = session is None
@@ -278,6 +280,8 @@ class LivoltekApi:
                 data = json_mod.loads(raw)
         except LivoltekApiError:
             raise
+        except ValueError as err:
+            raise LivoltekApiError(f"Invalid JSON from {method} {url}: {err}") from err
         except asyncio.TimeoutError as err:
             raise LivoltekConnectionError(f"Timeout on {method} {url}") from err
         except aiohttp.ClientError as err:
@@ -369,7 +373,7 @@ class LivoltekApi:
         self, site_id: str, serial_number: str, days: int = 7, page: int = 1, size: int = 20
     ) -> dict:
         """Get device alarms for the last N days."""
-        now = datetime.now(timezone.utc)
+        now = dt_util.now()
         start = now - timedelta(days=days)
         return await self._request(
             "GET",
@@ -412,7 +416,7 @@ class LivoltekApi:
 
         Returns summed daily totals for each metric.
         """
-        now = datetime.now(timezone.utc)
+        now = dt_util.now()
         start_str = now.strftime("%Y-%m-%d 00:00:00")
         end_str = now.strftime("%Y-%m-%d 23:59:59")
         data = await self._request(
@@ -446,6 +450,7 @@ class LivoltekApi:
                     except (ValueError, TypeError):
                         pass
             result[metric] = round(total, 3)
+        result["date"] = now.date().isoformat()
         return result
 
     # ── BESS Management API ──────────────────────────────────────────

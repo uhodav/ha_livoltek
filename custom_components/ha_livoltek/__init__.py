@@ -5,11 +5,14 @@ from datetime import timedelta
 
 import voluptuous as vol
 from pathlib import Path
+from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.helpers import device_registry as dr
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.loader import async_get_integration
 
 from .api import LivoltekApi, LivoltekApiError
 from .const import (
@@ -27,21 +30,10 @@ from .const import (
     CONF_TOKEN,
     CONF_UPDATE_INTERVAL,
     CONF_WORKMODE,
+    CONF_WORK_MODE_HIDDEN,
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
-    GROUP_ALARMS,
     GROUP_DAILY_ENERGY,
-    GROUP_DEVICE_BASIC,
-    GROUP_DEVICE_DETAILS,
-    GROUP_DEVICE_ELECTRICITY,
-    GROUP_OVERVIEW,
-    GROUP_POWER_FLOW,
-    GROUP_REALTIME,
-    GROUP_SITE_DETAILS,
-    GROUP_SITE_INSTALLER,
-    GROUP_SITE_OWNER,
-    GROUP_SOCIAL,
-    GROUP_STORAGE,
     MIN_UPDATE_INTERVAL,
     SERVERS,
 )
@@ -50,7 +42,6 @@ from .coordinator import (
     LivoltekSlowCoordinator,
 )
 
-DOMAIN = "ha_livoltek"
 _LOGGER = logging.getLogger(__name__)
 
 BASE_PLATFORMS = ["sensor"]
@@ -73,6 +64,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             StaticPathConfig(url, str(frontend_dir / fname), cache_headers=False)
             for fname, url in files
         ])
+        integration = await async_get_integration(hass, DOMAIN)
+        add_extra_js_url(hass, f"{FRONTEND_URL}?v={integration.version}")
         hass.data[DOMAIN][FRONTEND_KEY] = True
 
     server_type = entry.data[CONF_SERVER_TYPE]
@@ -122,10 +115,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "current_workmode": entry.data.get(CONF_WORKMODE),
     }
 
-    # Keep coordinators alive
-    coord_medium.async_add_listener(lambda: None)
-    coord_slow.async_add_listener(lambda: None)
-
     # First refresh — medium is mandatory, slow is optional
     await coord_medium.async_config_entry_first_refresh()
 
@@ -136,7 +125,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         except Exception:  # noqa: BLE001
             _LOGGER.warning("Slow coordinator first refresh failed, will retry")
 
-    entry.async_on_unload(entry.add_update_listener(_async_options_updated))
+    _disable_work_mode_entities(hass, entry, site_id, device_sn)
 
     await hass.config_entries.async_forward_entry_setups(entry, platforms)
 
@@ -165,12 +154,14 @@ SCHEDULE_ENTRY_SCHEMA = vol.Schema(
     }
 )
 
+SCHEDULE_LIST_SCHEMA = vol.Schema([SCHEDULE_ENTRY_SCHEMA])
+
 SERVICE_SCHEMA = vol.Schema(
     {
         vol.Required("device_sn"): str,
-        vol.Required("work_mode"): vol.All(int, vol.Range(min=0, max=10)),
+        vol.Required("work_mode"): vol.All(vol.Coerce(int), vol.Range(min=0, max=10)),
         vol.Optional("schedule_list"): vol.Any(
-            [SCHEDULE_ENTRY_SCHEMA],
+            SCHEDULE_LIST_SCHEMA,
             str,  # allow JSON string too
         ),
     }
@@ -191,10 +182,9 @@ def _register_services(hass: HomeAssistant) -> None:
         if schedule_raw is not None:
             if isinstance(schedule_raw, str):
                 try:
-                    schedule_list = json.loads(schedule_raw)
-                except (json.JSONDecodeError, TypeError) as err:
-                    _LOGGER.error("Invalid schedule_list JSON: %s", err)
-                    return
+                    schedule_list = SCHEDULE_LIST_SCHEMA(json.loads(schedule_raw))
+                except (json.JSONDecodeError, TypeError, vol.Invalid) as err:
+                    raise ServiceValidationError(f"Invalid schedule_list: {err}") from err
             else:
                 schedule_list = schedule_raw
 
@@ -215,24 +205,25 @@ def _register_services(hass: HomeAssistant) -> None:
                 break
 
         if runtime is None or entry is None:
-            _LOGGER.error("No Livoltek integration found for device_sn=%s", device_sn)
-            return
+            raise ServiceValidationError(f"No Livoltek integration found for device_sn={device_sn}")
 
         if not runtime.get("has_control"):
-            _LOGGER.error("BESS control not configured for device %s", device_sn)
-            return
+            raise ServiceValidationError(f"BESS control not configured for device {device_sn}")
 
         api = runtime["api"]
         account = entry.data.get(CONF_ACCOUNT, "")
         pwd_md5 = entry.data.get(CONF_PASSWORD, "")
 
-        await api.set_work_mode(
-            account=account,
-            pwd_md5=pwd_md5,
-            sn=device_sn,
-            work_mode=work_mode,
-            schedule_list=schedule_list,
-        )
+        try:
+            await api.set_work_mode(
+                account=account,
+                pwd_md5=pwd_md5,
+                sn=device_sn,
+                work_mode=work_mode,
+                schedule_list=schedule_list,
+            )
+        except LivoltekApiError as err:
+            raise HomeAssistantError(f"Failed to set work mode: {err}") from err
 
         # Track selected mode in runtime
         runtime["current_workmode"] = str(work_mode)
@@ -247,32 +238,17 @@ def _register_services(hass: HomeAssistant) -> None:
     )
 
 
-async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Apply updated options to running coordinators."""
-    runtime = hass.data.get(DOMAIN, {}).get(entry.entry_id)
-    if not runtime:
+def _disable_work_mode_entities(hass: HomeAssistant, entry: ConfigEntry, site_id: str, device_sn: str) -> None:
+    """Disable work mode sensor/select once: the API does not report the actual work mode."""
+    if entry.data.get(CONF_WORK_MODE_HIDDEN):
         return
-
-    new_interval = int(
-        entry.options.get(CONF_UPDATE_INTERVAL, entry.data.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL))
-    )
-    if new_interval < MIN_UPDATE_INTERVAL:
-        new_interval = MIN_UPDATE_INTERVAL
-
-    # Only the medium coordinator uses user-configurable interval
-    coord_medium = runtime.get("coordinator")
-    if coord_medium is not None:
-        coord_medium.update_interval = timedelta(minutes=new_interval)
-        coord_medium._normal_interval = timedelta(minutes=new_interval)
-
-    # Clean up devices for groups that are no longer enabled
-    _cleanup_orphan_devices(hass, entry)
-
-    # Refresh all coordinators
-    for key in ("coordinator", "coordinator_fast", "coordinator_slow"):
-        coord = runtime.get(key)
-        if coord is not None:
-            await coord.async_request_refresh()
+    ent_reg = er.async_get(hass)
+    for platform, key in (("sensor", "work_mode"), ("select", "work_mode_select")):
+        entity_id = ent_reg.async_get_entity_id(platform, DOMAIN, f"livoltek_{site_id}_{device_sn}_{key}")
+        entity = ent_reg.async_get(entity_id) if entity_id else None
+        if entity and entity.disabled_by is None:
+            ent_reg.async_update_entity(entity_id, disabled_by=er.RegistryEntryDisabler.INTEGRATION)
+    hass.config_entries.async_update_entry(entry, data={**entry.data, CONF_WORK_MODE_HIDDEN: True})
 
 
 def _cleanup_orphan_devices(hass: HomeAssistant, entry: ConfigEntry) -> None:

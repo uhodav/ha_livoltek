@@ -41,6 +41,15 @@
           "account": "Обліковий запис",
           "password": "Пароль"
         }
+      },
+      "reauth_confirm": {
+        "title": "Повторна авторизація Livoltek",
+        "description": "Livoltek API відхилив збережені облікові дані. Введіть нові дані API.",
+        "data": {
+          "secuid": "Security ID (secuid)",
+          "key": "API Key",
+          "token": "Токен користувача (з порталу Livoltek)"
+        }
       }
     },
     "error": {
@@ -53,6 +62,10 @@
       "already_configured": "Цей пристрій вже налаштовано.",
       "unknown": "Виникла невідома помилка.",
       "no_groups_selected": "Повинна бути вибрана хоча б одна група даних."
+    },
+    "abort": {
+      "already_configured": "Цей пристрій вже налаштовано.",
+      "reauth_successful": "Повторна авторизація успішна."
     }
   },
   "options": {
@@ -72,7 +85,9 @@
         "description": "Встановіть інтервал опитування та виберіть групи даних.",
         "data": {
           "update_interval": "Інтервал оновлення (хвилин)",
-          "enabled_groups": "Увімкнені групи даних"
+          "enabled_groups": "Увімкнені групи даних",
+          "battery_capacity": "Ємність батареї (кВт·год, 0 = оцінка за BMS)",
+          "battery_reserve_soc": "Резервний заряд батареї (%)"
         }
       },
       "control": {
@@ -122,6 +137,12 @@
       },
       "power_flow_timestamp": {
         "name": "Час оновлення потоку енергії"
+      },
+      "battery_time_to_full": {
+        "name": "Час до повного заряду"
+      },
+      "battery_time_to_empty": {
+        "name": "Час до розряду"
       },
       "current_power": {
         "name": "Поточна потужність"
@@ -191,9 +212,6 @@
       },
       "bms_capacity": {
         "name": "Ємність BMS"
-      },
-      "current_soc": {
-        "name": "Поточний заряд батареї"
       },
       "battery_cycle_count": {
         "name": "Кількість циклів батареї"
@@ -330,9 +348,6 @@
       "battery_current": {
         "name": "Струм батареї"
       },
-      "battery_soc_realtime": {
-        "name": "Заряд батареї (реальний час)"
-      },
       "eps_voltage": {
         "name": "Напруга EPS"
       },
@@ -416,6 +431,24 @@
       },
       "device_load_day": {
         "name": "Денне навантаження (пристрій)"
+      },
+      "pv_total_energy": {
+        "name": "Загальна генерація PV"
+      },
+      "grid_import_total_energy": {
+        "name": "Загальний імпорт з мережі"
+      },
+      "grid_export_total_energy": {
+        "name": "Загальний експорт у мережу"
+      },
+      "battery_charge_total_energy": {
+        "name": "Загальний заряд батареї"
+      },
+      "battery_discharge_total_energy": {
+        "name": "Загальний розряд батареї"
+      },
+      "load_total_energy": {
+        "name": "Загальне споживання"
       }
     },
     "button": {
