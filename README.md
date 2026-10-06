@@ -26,7 +26,7 @@ Custom Home Assistant integration for Livoltek inverters and BESS via Livoltek c
   4. Data group selection (choose endpoint groups to enable)
   5. Optional BESS control credentials (`account`, `password`)
 - Selective data collection by endpoint groups (13 groups)
-- **110 sensors** total (measurements + diagnostics)
+- **116 sensors** total (measurements + diagnostics), plus optional portal data
 - Human-readable enum values for statuses (PV, Grid, Load, Battery, Charging Pile, Running Status, Alarm Type, Battery Type)
 - API rate limit enforcement (min 5 min interval, energy reports 1x/hour)
 - BESS control entities:
@@ -116,7 +116,7 @@ You can enable/disable data groups during setup and in options.
     Communication status, running status, registration time, daily power generation/grid export/import/charge/discharge/load.
 
 ### Sensor summary
-- Total sensors: **116**
+- Total sensors: **116** (+14 sensors and 1 binary sensor with portal data)
 - Each data group is a **separate HA device** (e.g. `HPXXXXXHYYMMNNN (⚡ Power Flow)`)
 - Includes measurement and diagnostic entities
 - Every sensor has `data_group` attribute showing its source group
@@ -136,6 +136,18 @@ Lifetime totals that never decrease, built from the daily counters of **Device B
 
 The `device_basic` group must be enabled. Values are restored after a restart.
 
+With portal data enabled (see below) you can use the inverter's own lifetime counters instead: `portal_pv_energy_total`, `portal_grid_import_total`, `portal_grid_export_total`, `portal_battery_charge_total`, `portal_battery_discharge_total`, `portal_load_total`. Pick one set and do not mix them in the Energy dashboard.
+
+### Portal data (optional, unofficial API)
+Options → step 3 → **Use Livoltek portal data**. Uses the same account and password as BESS control to read the Livoltek web portal every minute:
+- battery max/min temperature, inverter temperature, cell voltage max/min, battery state of health, battery capacity, discharge end SoC
+- lifetime energy counters (see above)
+- `binary_sensor` **Active Alarm**: on while an Important or Urgent alarm is active
+- the actual inverter work mode: the work mode sensor and select are enabled and show the real mode
+- battery capacity and discharge end SoC are used for the battery time estimates
+
+The portal API is not documented by Livoltek and may change without notice. If it fails, only the portal entities become unavailable; everything else keeps working.
+
 ### Battery time estimates
 - `battery_time_to_full`: minutes until 100% while charging, otherwise unknown
 - `battery_time_to_empty`: minutes until the reserve SoC while discharging, otherwise unknown
@@ -151,7 +163,7 @@ The estimate uses the current battery power, SoC and battery capacity. The capac
 - `button.emergency_charging`
 
 #### Select
-- `select.work_mode_select` — sets inverter work mode (disabled by default: the API does not report the current mode, so the shown value can be stale; the `work_mode` sensor is disabled for the same reason)
+- `select.work_mode_select` — sets inverter work mode (disabled by default without portal data: the public API does not report the current mode, so the shown value can be stale; the `work_mode` sensor is disabled for the same reason)
 
 ### Service: set work mode with schedule
 Service name: `ha_livoltek.set_work_mode_schedule`
@@ -214,7 +226,7 @@ See full details and usage: [frontend/README.md](custom_components/ha_livoltek/f
   4. Вибір груп даних (endpoint groups)
   5. Опційні дані для керування BESS (`account`, `password`)
 - Вибіркове отримання даних по 13 групах
-- **110 сенсорів** (основні + діагностичні)
+- **116 сенсорів** (основні + діагностичні), плюс опційні дані порталу
 - Читабельні значення статусів (PV, мережа, навантаження, батарея, EV, статус роботи, тип тривоги, тип батареї)
 - Дотримання лімітів API (мін. 5 хв інтервал, звіти енергії 1 раз/годину)
 - Сутності керування BESS:
@@ -304,7 +316,7 @@ See full details and usage: [frontend/README.md](custom_components/ha_livoltek/f
     Статус зв'язку, статус роботи, час реєстрації, добова генерація/експорт/імпорт/заряд/розряд/навантаження.
 
 ### Підсумок по сенсорах
-- Усього сенсорів: **116**
+- Усього сенсорів: **116** (+14 сенсорів і 1 бінарний сенсор з даними порталу)
 - Кожна група даних — **окремий пристрій HA** (наприклад, `HPXXXXXHYYMMNNN (⚡ Потоки енергії)`)
 - Є вимірювальні та діагностичні сутності
 - Кожен сенсор має атрибут `data_group` з назвою групи-джерела
@@ -324,6 +336,18 @@ See full details and usage: [frontend/README.md](custom_components/ha_livoltek/f
 
 Група `device_basic` має бути увімкнена. Значення відновлюються після перезапуску.
 
+З увімкненими даними порталу (див. нижче) можна використовувати власні загальні лічильники інвертора: `portal_pv_energy_total`, `portal_grid_import_total`, `portal_grid_export_total`, `portal_battery_charge_total`, `portal_battery_discharge_total`, `portal_load_total`. Оберіть один набір і не змішуйте їх в енергетичній панелі.
+
+### Дані порталу (опційно, неофіційний API)
+Налаштування → крок 3 → **Використовувати дані порталу Livoltek**. Використовує той самий акаунт і пароль, що й керування BESS, і читає веб-портал Livoltek щохвилини:
+- макс./мін. температура батареї, температура інвертора, макс./мін. напруга комірки, стан батареї (SOH), ємність батареї, поріг розряду
+- загальні лічильники енергії (див. вище)
+- `binary_sensor` **Активна аварія**: увімкнений, поки активна важлива або термінова аварія
+- реальний режим роботи інвертора: сенсор і select режиму вмикаються та показують справжній режим
+- ємність батареї та поріг розряду використовуються для оцінки часу роботи батареї
+
+API порталу не документований Livoltek і може змінитися без попередження. Якщо він не працює, недоступними стають лише сутності порталу, решта працює як раніше.
+
 ### Оцінка часу роботи батареї
 - `battery_time_to_full`: хвилини до 100% під час заряду, інакше невідомо
 - `battery_time_to_empty`: хвилини до резервного заряду під час розряду, інакше невідомо
@@ -339,7 +363,7 @@ See full details and usage: [frontend/README.md](custom_components/ha_livoltek/f
 - `button.emergency_charging`
 
 #### Select
-- `select.work_mode_select` — вибір режиму роботи інвертора (вимкнено за замовчуванням: API не повідомляє поточний режим, тому показане значення може бути застарілим; сенсор `work_mode` вимкнено з тієї ж причини)
+- `select.work_mode_select` — вибір режиму роботи інвертора (без даних порталу вимкнено за замовчуванням: публічний API не повідомляє поточний режим, тому показане значення може бути застарілим; сенсор `work_mode` вимкнено з тієї ж причини)
 
 ### Сервіс: встановлення режиму з розкладом
 Назва сервісу: `ha_livoltek.set_work_mode_schedule`

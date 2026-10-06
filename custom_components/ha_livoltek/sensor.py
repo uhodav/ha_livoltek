@@ -19,6 +19,7 @@ from homeassistant.const import (
     UnitOfFrequency,
     UnitOfMass,
     UnitOfPower,
+    UnitOfTemperature,
     UnitOfTime,
 )
 from homeassistant.core import callback
@@ -37,6 +38,7 @@ from .const import (
     CONF_DEVICE_SN,
     CONF_SITE_ID,
     CONF_SITE_NAME,
+    CONF_USE_PORTAL,
     CONF_WORKMODE,
     DEFAULT_BATTERY_RESERVE_SOC,
     DOMAIN,
@@ -45,6 +47,7 @@ from .const import (
     GROUP_DAILY_ENERGY,
     GROUP_LABELS,
     GROUP_LABELS_UK,
+    GROUP_PORTAL,
     LOAD_STATUS_MAP,
     PV_STATUS_MAP,
     RUNNING_STATUS_MAP,
@@ -87,38 +90,67 @@ def _get_last_alarm_field(alarms_data: dict, field: str):
     return records[0].get(field)
 
 
-def _battery_soc(data: dict) -> float | None:
-    """Battery SoC: realtime BMS value first, then storage, then power flow."""
-    for value in (
-        (data.get("realtime") or {}).get("batterySoc"),
-        (data.get("storage") or {}).get("currentSoc"),
-        (data.get("power_flow") or {}).get("energySoc"),
-    ):
-        soc = _safe_float(value)
-        if soc is not None:
-            return soc
-    return None
-
-
-def _storage_voltage(storage: dict) -> float | None:
-    """Latest battery voltage from the storage historyMap."""
+def _storage_latest(storage: dict, field: str) -> float | None:
+    """Latest non-empty value of a field from the storage historyMap."""
     history = storage.get("historyMap")
-    if not isinstance(history, dict) or not history:
+    if not isinstance(history, dict):
         return None
-    latest = history[max(history, key=lambda ts: _safe_float(ts) or 0)]
-    if isinstance(latest, list) and latest and isinstance(latest[0], dict):
-        return _safe_float(latest[0].get("energyVolage"))
+    for ts in sorted(history, key=lambda ts: _safe_float(ts) or 0, reverse=True):
+        entries = history[ts]
+        if isinstance(entries, list):
+            for item in entries:
+                value = _safe_float(item.get(field)) if isinstance(item, dict) else None
+                if value is not None:
+                    return value
     return None
 
 
-def _battery_capacity(entry_data: dict, data: dict) -> tuple[float | None, str]:
-    """Battery capacity in kWh: configured value, or BMS Ah × battery voltage."""
+def _battery_soc(data: dict) -> float | None:
+    """Battery SoC: realtime BMS, storage, storage history, then power flow.
+
+    curPowerflow energySoc is known to stay null for days while /ESS still reports SoC.
+    """
+    storage = data.get("storage") or {}
+    for value in (
+        _safe_float((data.get("realtime") or {}).get("batterySoc")),
+        _safe_float(storage.get("currentSoc")),
+        _storage_latest(storage, "energySoc"),
+        _safe_float((data.get("power_flow") or {}).get("energySoc")),
+    ):
+        if value is not None:
+            return value
+    return None
+
+
+def _portal_data(hass, entry_id: str) -> dict:
+    """Latest data from the portal coordinator, or {} when it is off or failing."""
+    runtime = hass.data.get(DOMAIN, {}).get(entry_id, {}) if hass else {}
+    coordinator = runtime.get("coordinator_portal")
+    if coordinator is None or not coordinator.last_update_success:
+        return {}
+    return (coordinator.data or {}).get(GROUP_PORTAL) or {}
+
+
+def current_work_mode_value(hass, entry_id: str) -> str | None:
+    """Actual work mode from the portal, else the last mode set from Home Assistant."""
+    mode = _safe_float(_portal_data(hass, entry_id).get("workModel"))
+    if mode is not None:
+        return str(int(mode))
+    runtime = hass.data.get(DOMAIN, {}).get(entry_id, {}) if hass else {}
+    return runtime.get("current_workmode")
+
+
+def _battery_capacity(entry_data: dict, data: dict, portal: dict) -> tuple[float | None, str]:
+    """Battery capacity in kWh: configured, from the portal, or BMS Ah × battery voltage."""
     configured = _safe_float(entry_data.get(CONF_BATTERY_CAPACITY))
     if configured:
         return configured, "configured"
+    from_portal = _safe_float(portal.get("batteryCapacityKwh"))
+    if from_portal:
+        return from_portal, "portal"
     storage = data.get("storage") or {}
     amp_hours = _safe_float(storage.get("BMSCapacity"))
-    voltage = _safe_float((data.get("realtime") or {}).get("batteryVoltage")) or _storage_voltage(storage)
+    voltage = _safe_float((data.get("realtime") or {}).get("batteryVoltage")) or _storage_latest(storage, "energyVolage")
     if amp_hours and voltage:
         return round(amp_hours * voltage / 1000, 2), "estimated"
     return None, "unknown"
@@ -160,6 +192,7 @@ def _build_device_info(
         "manufacturer": "LIVOLTEK",
         "model": product_type or device_model,
         "sw_version": sw_version,
+        "serial_number": device_sn or None,
     }
 
 
@@ -320,6 +353,24 @@ ENERGY_TOTAL_SENSORS = [
     ("load_total_energy", "device_basic", "loadDay", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, UnitOfEnergy.KILO_WATT_HOUR, "mdi:home-lightning-bolt", None),
 ]
 
+# Web portal (optional): battery details and lifetime counters reported by the inverter
+PORTAL_SENSORS = [
+    ("battery_max_temperature", GROUP_PORTAL, "batteryMaxTemperature", SensorDeviceClass.TEMPERATURE, SensorStateClass.MEASUREMENT, UnitOfTemperature.CELSIUS, "mdi:thermometer-high", None),
+    ("battery_min_temperature", GROUP_PORTAL, "batteryMinTemperature", SensorDeviceClass.TEMPERATURE, SensorStateClass.MEASUREMENT, UnitOfTemperature.CELSIUS, "mdi:thermometer-low", None),
+    ("inverter_temperature", GROUP_PORTAL, "temperature", SensorDeviceClass.TEMPERATURE, SensorStateClass.MEASUREMENT, UnitOfTemperature.CELSIUS, "mdi:thermometer", None),
+    ("battery_cell_voltage_max", GROUP_PORTAL, "vCellMax", SensorDeviceClass.VOLTAGE, SensorStateClass.MEASUREMENT, UnitOfElectricPotential.VOLT, "mdi:battery-plus-variant", EntityCategory.DIAGNOSTIC),
+    ("battery_cell_voltage_min", GROUP_PORTAL, "vCellMin", SensorDeviceClass.VOLTAGE, SensorStateClass.MEASUREMENT, UnitOfElectricPotential.VOLT, "mdi:battery-minus-variant", EntityCategory.DIAGNOSTIC),
+    ("battery_soh", GROUP_PORTAL, "BMSSOH", None, SensorStateClass.MEASUREMENT, PERCENTAGE, "mdi:battery-heart-variant", EntityCategory.DIAGNOSTIC),
+    ("portal_battery_capacity", GROUP_PORTAL, "batteryCapacityKwh", SensorDeviceClass.ENERGY_STORAGE, SensorStateClass.MEASUREMENT, UnitOfEnergy.KILO_WATT_HOUR, "mdi:battery-high", EntityCategory.DIAGNOSTIC),
+    ("discharge_end_soc", GROUP_PORTAL, "dischargeEndSOC", None, SensorStateClass.MEASUREMENT, PERCENTAGE, "mdi:battery-arrow-down-outline", EntityCategory.DIAGNOSTIC),
+    ("portal_pv_energy_total", GROUP_PORTAL, "pvFieldTotal", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, UnitOfEnergy.KILO_WATT_HOUR, "mdi:solar-power", None),
+    ("portal_grid_import_total", GROUP_PORTAL, "girdImportedTotal", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, UnitOfEnergy.KILO_WATT_HOUR, "mdi:transmission-tower-import", None),
+    ("portal_grid_export_total", GROUP_PORTAL, "girdExportedTotal", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, UnitOfEnergy.KILO_WATT_HOUR, "mdi:transmission-tower-export", None),
+    ("portal_battery_charge_total", GROUP_PORTAL, "batteryCDTotal", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, UnitOfEnergy.KILO_WATT_HOUR, "mdi:battery-arrow-up", None),
+    ("portal_battery_discharge_total", GROUP_PORTAL, "batteryFDTotal", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, UnitOfEnergy.KILO_WATT_HOUR, "mdi:battery-arrow-down", None),
+    ("portal_load_total", GROUP_PORTAL, "loadConsumptionTotal", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, UnitOfEnergy.KILO_WATT_HOUR, "mdi:home-lightning-bolt", None),
+]
+
 _ACCUMULATED_KEYS = {definition[0] for definition in ENERGY_TOTAL_SENSORS}
 _BATTERY_TIME_KEYS = {"battery_time_to_full", "battery_time_to_empty"}
 
@@ -342,6 +393,7 @@ ALL_SENSOR_DEFINITIONS = (
     + SITE_OWNER_SENSORS
     + DEVICE_BASIC_SENSORS
     + ENERGY_TOTAL_SENSORS
+    + PORTAL_SENSORS
 )
 
 # Set of sensor keys that represent ms-epoch timestamps
@@ -361,17 +413,21 @@ async def async_setup_entry(hass, entry, async_add_entities):
     runtime = hass.data[DOMAIN][entry.entry_id]
     coord_medium = runtime["coordinator"]
     coord_slow = runtime.get("coordinator_slow")
+    coord_portal = runtime.get("coordinator_portal")
     entry_data = entry.data
     enabled_groups = runtime.get("enabled_groups", set())
 
     sensors = []
     for sensor_def in ALL_SENSOR_DEFINITIONS:
         key, data_source, data_field, device_class, state_class, unit, icon, entity_category = sensor_def
+        if data_source == GROUP_PORTAL:
+            if coord_portal is None:
+                continue
+            coordinator = coord_portal
         # Skip sensors whose data_source group is not enabled
-        if data_source not in enabled_groups:
+        elif data_source not in enabled_groups:
             continue
-
-        if data_source in _SLOW_COORDINATOR_SOURCES and coord_slow is not None:
+        elif data_source in _SLOW_COORDINATOR_SOURCES and coord_slow is not None:
             coordinator = coord_slow
         else:
             coordinator = coord_medium
@@ -445,7 +501,9 @@ class LivoltekSensor(CoordinatorEntity, SensorEntity):
             self._attr_native_unit_of_measurement = unit
         if entity_category is not None:
             self._attr_entity_category = entity_category
-        if sensor_key in _DISABLED_BY_DEFAULT_KEYS:
+        if sensor_key in _DISABLED_BY_DEFAULT_KEYS and not (
+            sensor_key == "work_mode" and entry_data.get(CONF_USE_PORTAL)
+        ):
             self._attr_entity_registry_enabled_default = False
 
     @property
@@ -468,16 +526,7 @@ class LivoltekSensor(CoordinatorEntity, SensorEntity):
     def _compute_value(self):
         """Compute the raw sensor value from coordinator data."""
         if self._sensor_key == "battery_soc":
-            data = self.coordinator.data or {}
-            soc_realtime = (data.get("realtime") or {}).get("batterySoc")
-            soc_storage = (data.get("storage") or {}).get("currentSoc")
-            soc_powerflow = (data.get("power_flow") or {}).get("energySoc")
-            # Используем последнее не-None значение
-            for val in (soc_realtime, soc_storage, soc_powerflow):
-                if val is not None:
-                    self._last_soc = _safe_float(val)
-                    break
-            return getattr(self, "_last_soc", None)
+            return _battery_soc(self.coordinator.data or {})
 
         data = self.coordinator.data or {}
         source_data = data.get(self._data_source, {})
@@ -564,9 +613,8 @@ class LivoltekSensor(CoordinatorEntity, SensorEntity):
         return raw_value
 
     def _parse_workmode(self, source_data: dict):
-        """Return current work mode from tracked runtime value."""
-        runtime = self.hass.data.get(DOMAIN, {}).get(self._entry_id, {})
-        current_value = runtime.get("current_workmode")
+        """Return current work mode (portal value when available)."""
+        current_value = current_work_mode_value(self.hass, self._entry_id)
         if current_value is None:
             return None
 
@@ -776,14 +824,18 @@ class LivoltekBatteryTimeSensor(LivoltekSensor):
         data = self.coordinator.data or {}
         power = _safe_float((data.get("power_flow") or {}).get("energyPower"))
         soc = _battery_soc(data)
-        capacity, capacity_source = _battery_capacity(self._entry_data, data)
-        reserve = _safe_float(self._entry_data.get(CONF_BATTERY_RESERVE_SOC))
+        portal = _portal_data(self.hass, self._entry_id)
+        capacity, capacity_source = _battery_capacity(self._entry_data, data, portal)
+        reserve, reserve_source = _safe_float(portal.get("dischargeEndSOC")), "portal"
+        if reserve is None:
+            reserve, reserve_source = _safe_float(self._entry_data.get(CONF_BATTERY_RESERVE_SOC)), "configured"
         if reserve is None:
             reserve = DEFAULT_BATTERY_RESERVE_SOC
         attrs = {
             "battery_capacity_kwh": capacity,
             "battery_capacity_source": capacity_source,
             "battery_reserve_soc": reserve,
+            "battery_reserve_soc_source": reserve_source,
         }
         if power is None or soc is None or not capacity:
             return None, attrs

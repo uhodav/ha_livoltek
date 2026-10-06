@@ -13,12 +13,13 @@ from .const import (
     CONF_DEVICE_SN,
     CONF_PASSWORD,
     CONF_SITE_ID,
+    CONF_USE_PORTAL,
     CONF_WORKMODE,
     DOMAIN,
     GROUP_DEVICE_DETAILS,
     WORK_MODE_MAP,
 )
-from .sensor import _build_device_info as build_group_device_info, _get_group_label
+from .sensor import _build_device_info as build_group_device_info, _get_group_label, current_work_mode_value
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -90,8 +91,8 @@ class LivoltekWorkModeSelect(CoordinatorEntity, SelectEntity):
         self._attr_has_entity_name = True
         self._attr_icon = "mdi:cog-play"
         self._attr_entity_category = EntityCategory.CONFIG
-        # The API does not report the actual work mode, so the shown option can be stale
-        self._attr_entity_registry_enabled_default = False
+        # Without the portal the actual work mode is unknown, so the shown option can be stale
+        self._attr_entity_registry_enabled_default = bool(entry_data.get(CONF_USE_PORTAL))
 
     @property
     def device_info(self):
@@ -106,11 +107,16 @@ class LivoltekWorkModeSelect(CoordinatorEntity, SelectEntity):
         # Fallback to hardcoded map
         return list(WORK_MODE_MAP.values())
 
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        portal = self._hass.data[DOMAIN][self._entry.entry_id].get("coordinator_portal")
+        if portal is not None:
+            self.async_on_remove(portal.async_add_listener(self.async_write_ha_state))
+
     @property
     def current_option(self) -> str | None:
-        """Return the current work mode from tracked runtime value."""
-        runtime = self._hass.data.get(DOMAIN, {}).get(self._entry.entry_id, {})
-        current_value = runtime.get("current_workmode")
+        """Return the current work mode (portal value when available)."""
+        current_value = current_work_mode_value(self._hass, self._entry.entry_id)
         if current_value is None:
             return None
 
@@ -161,5 +167,9 @@ class LivoltekWorkModeSelect(CoordinatorEntity, SelectEntity):
         # Persist to config entry for restore after restart
         new_data = {**self._entry.data, CONF_WORKMODE: mode_value}
         self._hass.config_entries.async_update_entry(self._entry, data=new_data)
+
+        portal = runtime.get("coordinator_portal")
+        if portal is not None:
+            portal.work_mode_changed(mode_value)
 
         self.async_write_ha_state()

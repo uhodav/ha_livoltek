@@ -18,6 +18,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import LivoltekApi, LivoltekApiError, LivoltekAuthError
+from .portal import LivoltekPortalApi
 from .const import (
     ALL_GROUPS,
     BACKOFF_INTERVALS,
@@ -40,6 +41,9 @@ from .const import (
     GROUP_SITE_OWNER,
     GROUP_SOCIAL,
     GROUP_STORAGE,
+    PORTAL_ALARMS_INTERVAL,
+    PORTAL_SETTINGS_INTERVAL,
+    SCAN_INTERVAL_PORTAL,
     SCAN_INTERVAL_SLOW,
     STATIC_DATA_INTERVAL,
 )
@@ -310,3 +314,148 @@ class LivoltekSlowCoordinator(_LivoltekBaseCoordinator):
             _LOGGER.warning("Daily energy report not available for device %s: %s", self._device_id, err)
             daily = (self.data or {}).get("daily_energy") or {}
         return {"daily_energy": daily}
+
+
+# ── Portal coordinator (unofficial web portal API) ───────────────────
+
+# Lifetime counters in energyStorageInfo, normalised to kWh
+PORTAL_TOTAL_FIELDS = (
+    "pvFieldTotal", "girdImportedTotal", "girdExportedTotal",
+    "batteryCDTotal", "batteryFDTotal", "loadConsumptionTotal",
+)
+_ENERGY_UNIT_FACTORS = {"wh": 0.001, "kwh": 1.0, "mwh": 1000.0, "gwh": 1_000_000.0}
+# point/info registers: {"value": "10", "address": "40010", ...}
+PORTAL_SETTING_KEYS = ("workModel", "dischargeEndSOC", "BMSSOH")
+_ALARM_ACTIVE_LEVELS = frozenset({"Important", "Urgent"})
+# The inverter applies a new work mode with a delay
+_WORK_MODE_RECHECK = timedelta(minutes=2)
+
+
+class LivoltekPortalCoordinator(_LivoltekBaseCoordinator):
+    """Polls the Livoltek web portal: battery details, lifetime totals, settings, alarms.
+
+    Failures here never raise ConfigEntryAuthFailed: the public API keeps working.
+    """
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        entry: ConfigEntry,
+        portal: LivoltekPortalApi,
+    ) -> None:
+        super().__init__(
+            hass,
+            entry,
+            portal,
+            name=f"Livoltek Portal {entry.data.get(CONF_SITE_ID, '')}",
+            update_interval=SCAN_INTERVAL_PORTAL,
+        )
+        self._device_sn = str(entry.data.get(CONF_DEVICE_SN, ""))
+        self._station_id: int | None = None
+        self._device_id: int | None = None
+        self._collector_sn: str | None = None
+        self._product_type: int | None = None
+        self._settings: dict[str, Any] = {}
+        self._settings_fetched_at: float | None = None
+        self._alarms: list[dict[str, Any]] = []
+        self._alarms_fetched_at: float | None = None
+        self._totals: dict[str, float] = {}
+
+    async def _async_update_data(self) -> dict[str, Any]:
+        try:
+            result = await self._async_fetch()
+        except LivoltekApiError as err:
+            self._record_failure()
+            raise UpdateFailed(f"{self.name}: {err}") from err
+        self._record_success()
+        return result
+
+    def work_mode_changed(self, mode: str) -> None:
+        """Show the new work mode right away and re-read settings in ~2 minutes."""
+        if self._settings_fetched_at is None:
+            return
+        self._settings["workModel"] = mode
+        if self.data:
+            self.async_set_updated_data({**self.data, "portal": {**self.data["portal"], "workModel": mode}})
+        self._settings_fetched_at = (
+            self.hass.loop.time() - PORTAL_SETTINGS_INTERVAL.total_seconds() + _WORK_MODE_RECHECK.total_seconds()
+        )
+
+    async def _discover(self) -> None:
+        """Find the portal station/device ids of the configured inverter by serial number."""
+        for station in await self._api.get_stations():
+            station_id = station.get("id")
+            if station_id is None:
+                continue
+            for device in await self._api.get_devices(station_id):
+                if str(device.get("inverterSn", "")).upper() == self._device_sn.upper():
+                    self._station_id = int(station_id)
+                    self._device_id = int(device["id"])
+                    return
+        raise LivoltekApiError(f"Inverter {self._device_sn} not found in the Livoltek portal account")
+
+    def _due(self, fetched_at: float | None, interval: timedelta) -> bool:
+        return fetched_at is None or self.hass.loop.time() - fetched_at >= interval.total_seconds()
+
+    def _normalise_totals(self, info: dict[str, Any]) -> dict[str, float]:
+        totals: dict[str, float] = {}
+        for field in PORTAL_TOTAL_FIELDS:
+            try:
+                value = float(info.get(field))
+            except (TypeError, ValueError):
+                continue
+            unit = str(info.get(f"{field}Unit") or "kWh").lower()
+            value = round(value * _ENERGY_UNIT_FACTORS.get(unit, 1.0), 3)
+            previous = self._totals.get(field)
+            if previous is not None and value < previous:
+                _LOGGER.debug("Portal %s decreased (%s -> %s), keeping previous", field, previous, value)
+                value = previous
+            totals[field] = self._totals[field] = value
+        return totals
+
+    async def _async_fetch(self) -> dict[str, Any]:
+        if self._device_id is None:
+            await self._discover()
+
+        info = await self._api.get_energy_storage_info(self._device_id)
+        if self._collector_sn is None:
+            collector = info.get("collectorSn") or info.get("wifiSn")
+            self._collector_sn = str(collector).strip() if collector not in (None, "", "null") else None
+        if self._product_type is None:
+            try:
+                self._product_type = int(info.get("template"))
+            except (TypeError, ValueError):
+                self._product_type = None
+
+        if self._collector_sn and self._product_type is not None and self._due(
+            self._settings_fetched_at, PORTAL_SETTINGS_INTERVAL
+        ):
+            try:
+                points = await self._api.get_point_info(self._device_id, self._collector_sn, self._product_type)
+            except LivoltekApiError as err:
+                _LOGGER.warning("Portal settings not available for %s: %s", self._device_sn, err)
+            else:
+                self._settings = {
+                    key: point.get("value") if isinstance(point, dict) else point
+                    for key, point in points.items()
+                    if key in PORTAL_SETTING_KEYS
+                }
+                self._settings_fetched_at = self.hass.loop.time()
+
+        if self._due(self._alarms_fetched_at, PORTAL_ALARMS_INTERVAL):
+            try:
+                self._alarms = await self._api.get_alarms(self._station_id, self._device_sn)
+            except LivoltekApiError as err:
+                _LOGGER.warning("Portal alarms not available for %s: %s", self._device_sn, err)
+            else:
+                self._alarms_fetched_at = self.hass.loop.time()
+
+        # actionId == 0: alarm is still active
+        active = [a for a in self._alarms if a.get("actionId") == 0 and a.get("level") in _ALARM_ACTIVE_LEVELS]
+        portal = {
+            **{k: v for k, v in info.items() if not isinstance(v, (dict, list))},
+            **self._normalise_totals(info),
+            **self._settings,
+            "active_alarm_count": len(active),
+        }
+        return {"portal": portal, "alarms": self._alarms, "active_alarms": active}

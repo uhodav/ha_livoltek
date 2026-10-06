@@ -39,7 +39,8 @@
         "description": "Enter account and password for inverter control. Leave blank for monitoring only.",
         "data": {
           "account": "Account",
-          "password": "Password"
+          "password": "Password",
+          "use_portal": "Use Livoltek portal data (unofficial API, same account and password)"
         }
       },
       "reauth_confirm": {
@@ -62,7 +63,10 @@
       "already_configured": "This device is already configured.",
       "unknown": "An unknown error occurred.",
       "bad_request": "Bad request (400). Please check your device selection and credentials.",
-      "no_groups_selected": "At least one data group must be selected."
+      "no_groups_selected": "At least one data group must be selected.",
+      "portal_auth": "Livoltek portal rejected the account or password.",
+      "portal_connect": "Failed to connect to the Livoltek portal.",
+      "portal_needs_account": "Portal data needs the account and password."
     },
     "abort": {
       "already_configured": "This device is already configured.",
@@ -96,9 +100,19 @@
         "description": "Update account and password for inverter control. Leave blank to keep current.",
         "data": {
           "account": "Account for BESS control",
-          "password": "New password for BESS control"
+          "password": "New password for BESS control",
+          "use_portal": "Use Livoltek portal data (unofficial API, same account and password)"
         }
       }
+    },
+    "error": {
+      "portal_auth": "Livoltek portal rejected the account or password.",
+      "portal_connect": "Failed to connect to the Livoltek portal.",
+      "portal_needs_account": "Portal data needs the account and password.",
+      "invalid_auth": "Invalid credentials. Please check secuid and key.",
+      "cannot_connect": "Failed to connect to Livoltek API.",
+      "unknown": "An unknown error occurred.",
+      "no_groups_selected": "At least one data group must be selected."
     }
   },
   "entity": {
@@ -450,6 +464,48 @@
       },
       "load_total_energy": {
         "name": "Load Consumption Total"
+      },
+      "battery_max_temperature": {
+        "name": "Battery Max Temperature"
+      },
+      "battery_min_temperature": {
+        "name": "Battery Min Temperature"
+      },
+      "inverter_temperature": {
+        "name": "Inverter Temperature"
+      },
+      "battery_cell_voltage_max": {
+        "name": "Battery Cell Voltage Max"
+      },
+      "battery_cell_voltage_min": {
+        "name": "Battery Cell Voltage Min"
+      },
+      "battery_soh": {
+        "name": "Battery State of Health"
+      },
+      "portal_battery_capacity": {
+        "name": "Battery Capacity"
+      },
+      "discharge_end_soc": {
+        "name": "Discharge End SoC"
+      },
+      "portal_pv_energy_total": {
+        "name": "PV Energy Total (Portal)"
+      },
+      "portal_grid_import_total": {
+        "name": "Grid Import Total (Portal)"
+      },
+      "portal_grid_export_total": {
+        "name": "Grid Export Total (Portal)"
+      },
+      "portal_battery_charge_total": {
+        "name": "Battery Charge Total (Portal)"
+      },
+      "portal_battery_discharge_total": {
+        "name": "Battery Discharge Total (Portal)"
+      },
+      "portal_load_total": {
+        "name": "Load Consumption Total (Portal)"
       }
     },
     "button": {
@@ -472,6 +528,11 @@
     "select": {
       "work_mode_select": {
         "name": "Work Mode"
+      }
+    },
+    "binary_sensor": {
+      "active_alarm": {
+        "name": "Active Alarm"
       }
     }
   },

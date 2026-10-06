@@ -18,6 +18,7 @@ CONF_ACCOUNT = "account"
 CONF_PASSWORD = "password"  # stored as MD5 hash
 CONF_ENABLED_GROUPS = "enabled_groups"
 CONF_WORK_MODE_HIDDEN = "work_mode_hidden"  # one-time migration flag
+CONF_USE_PORTAL = "use_portal"  # poll the unofficial web portal API with account/password
 CONF_BATTERY_CAPACITY = "battery_capacity"  # kWh, 0 = estimate from BMS
 CONF_BATTERY_RESERVE_SOC = "battery_reserve_soc"  # %, discharge stops here
 
@@ -35,6 +36,8 @@ GROUP_DAILY_ENERGY = "daily_energy"
 GROUP_SITE_INSTALLER = "site_installer"
 GROUP_SITE_OWNER = "site_owner"
 GROUP_DEVICE_BASIC = "device_basic"
+# Not user-selectable: enabled by CONF_USE_PORTAL
+GROUP_PORTAL = "portal"
 
 ALL_GROUPS = [
     GROUP_POWER_FLOW,
@@ -66,6 +69,7 @@ GROUP_LABELS = {
     GROUP_SITE_INSTALLER: "🏗️ Site Installer — Company, Org Code",
     GROUP_SITE_OWNER: "👤 Site Owner — Name, Email, Account",
     GROUP_DEVICE_BASIC: "📋 Device Basic Data — Daily Counters, Registration",
+    GROUP_PORTAL: "🌐 Portal — Temperatures, SOH, Lifetime Energy",
 }
 
 GROUP_LABELS_UK = {
@@ -82,6 +86,7 @@ GROUP_LABELS_UK = {
     GROUP_SITE_INSTALLER: "🏗️ Інсталятор — компанія, код організації",
     GROUP_SITE_OWNER: "👤 Власник сайту — ім'я, email, акаунт",
     GROUP_DEVICE_BASIC: "📋 Базові дані пристрою — добові лічильники, реєстрація",
+    GROUP_PORTAL: "🌐 Портал — температури, SOH, загальна енергія",
 }
 
 SERVER_INTERNATIONAL = "international"
@@ -90,6 +95,12 @@ SERVER_EUROPEAN = "european"
 SERVERS = {
     SERVER_INTERNATIONAL: "https://api.livoltek-portal.com:8081",
     SERVER_EUROPEAN: "https://api-eu.livoltek-portal.com:8081",
+}
+
+# Web portal (unofficial API)
+PORTAL_SERVERS = {
+    SERVER_INTERNATIONAL: "https://www.livoltek-portal.com",
+    SERVER_EUROPEAN: "https://evs.livoltek-portal.com",
 }
 
 DEFAULT_UPDATE_INTERVAL = 5  # minutes
@@ -350,6 +361,11 @@ MIN_UPDATE_INTERVAL = 5  # realtime data interval is 5 min on server side
 SCAN_INTERVAL_SLOW = timedelta(hours=1)
 # Rarely changing data (installer, owner, social, BESS description)
 STATIC_DATA_INTERVAL = timedelta(hours=6)
+
+SCAN_INTERVAL_PORTAL = timedelta(minutes=1)
+PORTAL_ALARMS_INTERVAL = timedelta(minutes=5)
+# Inverter settings registers (work mode, discharge end SoC, SOH)
+PORTAL_SETTINGS_INTERVAL = timedelta(hours=6)
 
 
 BACKOFF_INTERVALS = [

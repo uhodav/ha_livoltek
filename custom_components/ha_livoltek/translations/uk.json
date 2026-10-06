@@ -39,7 +39,8 @@
         "description": "Введіть обліковий запис та пароль для управління інвертором. Залиште порожнім для режиму моніторингу.",
         "data": {
           "account": "Обліковий запис",
-          "password": "Пароль"
+          "password": "Пароль",
+          "use_portal": "Використовувати дані порталу Livoltek (неофіційний API, той самий акаунт і пароль)"
         }
       },
       "reauth_confirm": {
@@ -61,7 +62,10 @@
       "invalid_device": "Невірний вибір пристрою.",
       "already_configured": "Цей пристрій вже налаштовано.",
       "unknown": "Виникла невідома помилка.",
-      "no_groups_selected": "Повинна бути вибрана хоча б одна група даних."
+      "no_groups_selected": "Повинна бути вибрана хоча б одна група даних.",
+      "portal_auth": "Портал Livoltek відхилив акаунт або пароль.",
+      "portal_connect": "Не вдалося підключитися до порталу Livoltek.",
+      "portal_needs_account": "Для даних порталу потрібні акаунт і пароль."
     },
     "abort": {
       "already_configured": "Цей пристрій вже налаштовано.",
@@ -95,9 +99,19 @@
         "description": "Оновіть обліковий запис та пароль для управління інвертором. Залиште порожнім, щоб зберегти поточні.",
         "data": {
           "account": "Обліковий запис BESS",
-          "password": "Новий пароль BESS"
+          "password": "Новий пароль BESS",
+          "use_portal": "Використовувати дані порталу Livoltek (неофіційний API, той самий акаунт і пароль)"
         }
       }
+    },
+    "error": {
+      "portal_auth": "Портал Livoltek відхилив акаунт або пароль.",
+      "portal_connect": "Не вдалося підключитися до порталу Livoltek.",
+      "portal_needs_account": "Для даних порталу потрібні акаунт і пароль.",
+      "invalid_auth": "Невірні облікові дані. Перевірте secuid та key.",
+      "cannot_connect": "Не вдалося підключитися до Livoltek API.",
+      "unknown": "Виникла невідома помилка.",
+      "no_groups_selected": "Повинна бути вибрана хоча б одна група даних."
     }
   },
   "entity": {
@@ -449,6 +463,48 @@
       },
       "load_total_energy": {
         "name": "Загальне споживання"
+      },
+      "battery_max_temperature": {
+        "name": "Макс. температура батареї"
+      },
+      "battery_min_temperature": {
+        "name": "Мін. температура батареї"
+      },
+      "inverter_temperature": {
+        "name": "Температура інвертора"
+      },
+      "battery_cell_voltage_max": {
+        "name": "Макс. напруга комірки"
+      },
+      "battery_cell_voltage_min": {
+        "name": "Мін. напруга комірки"
+      },
+      "battery_soh": {
+        "name": "Стан батареї (SOH)"
+      },
+      "portal_battery_capacity": {
+        "name": "Ємність батареї"
+      },
+      "discharge_end_soc": {
+        "name": "Поріг розряду"
+      },
+      "portal_pv_energy_total": {
+        "name": "Загальна генерація PV (портал)"
+      },
+      "portal_grid_import_total": {
+        "name": "Загальний імпорт з мережі (портал)"
+      },
+      "portal_grid_export_total": {
+        "name": "Загальний експорт у мережу (портал)"
+      },
+      "portal_battery_charge_total": {
+        "name": "Загальний заряд батареї (портал)"
+      },
+      "portal_battery_discharge_total": {
+        "name": "Загальний розряд батареї (портал)"
+      },
+      "portal_load_total": {
+        "name": "Загальне споживання (портал)"
       }
     },
     "button": {
@@ -471,6 +527,11 @@
     "select": {
       "work_mode_select": {
         "name": "Режим роботи"
+      }
+    },
+    "binary_sensor": {
+      "active_alarm": {
+        "name": "Активна аварія"
       }
     }
   },

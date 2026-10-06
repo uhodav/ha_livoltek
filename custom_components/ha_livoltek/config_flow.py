@@ -28,6 +28,7 @@ from .const import (
     CONF_SITE_NAME,
     CONF_TOKEN,
     CONF_UPDATE_INTERVAL,
+    CONF_USE_PORTAL,
     CONF_WORKMODE,
     DEFAULT_BATTERY_CAPACITY,
     DEFAULT_BATTERY_RESERVE_SOC,
@@ -36,11 +37,13 @@ from .const import (
     GROUP_LABELS,
     GROUP_LABELS_UK,
     MIN_UPDATE_INTERVAL,
+    PORTAL_SERVERS,
     SERVER_EUROPEAN,
     SERVER_INTERNATIONAL,
     SERVERS,
 )
 from .api import LivoltekApi, LivoltekApiError, LivoltekAuthError
+from .portal import LivoltekPortalApi
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -51,6 +54,30 @@ def _get_group_labels(hass) -> dict[str, str]:
     if lang and lang.startswith("uk"):
         return GROUP_LABELS_UK
     return GROUP_LABELS
+
+
+async def _check_portal(hass, server_type: str, account: str, password_md5: str) -> str | None:
+    """Try to log in to the web portal; return an error key or None."""
+    portal = LivoltekPortalApi(PORTAL_SERVERS[server_type], account, password_md5, async_get_clientsession(hass))
+    try:
+        await portal.login()
+    except LivoltekAuthError:
+        return "portal_auth"
+    except LivoltekApiError:
+        return "portal_connect"
+    return None
+
+
+def _control_schema(account_default: dict, use_portal: bool) -> vol.Schema:
+    return vol.Schema(
+        {
+            vol.Optional(CONF_ACCOUNT, description=account_default): str,
+            vol.Optional(CONF_PASSWORD): selector.TextSelector(
+                selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
+            ),
+            vol.Optional(CONF_USE_PORTAL, default=use_portal): bool,
+        }
+    )
 
 
 class LivoltekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -307,13 +334,21 @@ class LivoltekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_control(self, user_input: dict[str, Any] | None = None):
         """Step 5: Optional BESS control credentials."""
+        errors: dict[str, str] = {}
         if user_input is not None:
             account = user_input.get(CONF_ACCOUNT, "").strip()
             password = user_input.get(CONF_PASSWORD, "").strip()
+            use_portal = bool(user_input.get(CONF_USE_PORTAL))
             if account and password:
                 self._account = account
                 self._password_md5 = hashlib.md5(password.encode()).hexdigest()
+            if use_portal:
+                if not self._account:
+                    errors["base"] = "portal_needs_account"
+                elif error := await _check_portal(self.hass, self._server_type, self._account, self._password_md5):
+                    errors["base"] = error
 
+        if user_input is not None and not errors:
             title = f"{self._site_name} - {self._selected_device_id}"
 
             return self.async_create_entry(
@@ -335,21 +370,14 @@ class LivoltekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_ENABLED_GROUPS: self._enabled_groups,
                     CONF_ACCOUNT: self._account or "",
                     CONF_PASSWORD: self._password_md5 or "",
+                    CONF_USE_PORTAL: use_portal,
                 },
             )
 
         return self.async_show_form(
             step_id="control",
-            data_schema=vol.Schema(
-                {
-                    vol.Optional(CONF_ACCOUNT): str,
-                    vol.Optional(CONF_PASSWORD): selector.TextSelector(
-                        selector.TextSelectorConfig(
-                            type=selector.TextSelectorType.PASSWORD
-                        )
-                    ),
-                }
-            ),
+            data_schema=_control_schema({}, False),
+            errors=errors,
         )
 
     async def async_step_reauth(self, entry_data: Mapping[str, Any]):
@@ -559,10 +587,12 @@ class LivoltekOptionsFlow(config_entries.OptionsFlow):
     async def async_step_control(self, user_input: dict[str, Any] | None = None):
         """Step 3/3: BESS control credentials (optional)."""
         cur = self._config_entry.data
+        errors: dict[str, str] = {}
 
         if user_input is not None:
             account = user_input.get(CONF_ACCOUNT, "").strip()
             password = user_input.get(CONF_PASSWORD, "").strip()
+            use_portal = bool(user_input.get(CONF_USE_PORTAL))
 
             if account:
                 self._new_data[CONF_ACCOUNT] = account
@@ -570,7 +600,20 @@ class LivoltekOptionsFlow(config_entries.OptionsFlow):
                 self._new_data[CONF_PASSWORD] = hashlib.md5(
                     password.encode()
                 ).hexdigest()
+            self._new_data[CONF_USE_PORTAL] = use_portal
 
+            if use_portal:
+                if not (self._new_data.get(CONF_ACCOUNT) and self._new_data.get(CONF_PASSWORD)):
+                    errors["base"] = "portal_needs_account"
+                elif error := await _check_portal(
+                    self.hass,
+                    self._new_data[CONF_SERVER_TYPE],
+                    self._new_data[CONF_ACCOUNT],
+                    self._new_data[CONF_PASSWORD],
+                ):
+                    errors["base"] = error
+
+        if user_input is not None and not errors:
             # Save all changes to entry.data and reload
             self.hass.config_entries.async_update_entry(
                 self._config_entry, data=self._new_data
@@ -583,17 +626,8 @@ class LivoltekOptionsFlow(config_entries.OptionsFlow):
 
         return self.async_show_form(
             step_id="control",
-            data_schema=vol.Schema(
-                {
-                    vol.Optional(
-                        CONF_ACCOUNT,
-                        description={"suggested_value": cur.get(CONF_ACCOUNT, "")},
-                    ): str,
-                    vol.Optional(CONF_PASSWORD): selector.TextSelector(
-                        selector.TextSelectorConfig(
-                            type=selector.TextSelectorType.PASSWORD
-                        )
-                    ),
-                }
+            data_schema=_control_schema(
+                {"suggested_value": cur.get(CONF_ACCOUNT, "")}, bool(cur.get(CONF_USE_PORTAL))
             ),
+            errors=errors,
         )

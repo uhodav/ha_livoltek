@@ -29,23 +29,29 @@ from .const import (
     CONF_SITE_ID,
     CONF_TOKEN,
     CONF_UPDATE_INTERVAL,
+    CONF_USE_PORTAL,
     CONF_WORKMODE,
     CONF_WORK_MODE_HIDDEN,
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
     GROUP_DAILY_ENERGY,
+    GROUP_PORTAL,
     MIN_UPDATE_INTERVAL,
+    PORTAL_SERVERS,
     SERVERS,
 )
 from .coordinator import (
     LivoltekMediumCoordinator,
+    LivoltekPortalCoordinator,
     LivoltekSlowCoordinator,
 )
+from .portal import LivoltekPortalApi
 
 _LOGGER = logging.getLogger(__name__)
 
 BASE_PLATFORMS = ["sensor"]
 CONTROL_PLATFORMS = ["button", "select"]
+PORTAL_PLATFORMS = ["binary_sensor"]
 
 FRONTEND_KEY = "_frontend_registered"
 FRONTEND_URL = "/ha_livoltek/livoltek-power-card.js"
@@ -80,7 +86,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # BESS control credentials (optional)
     has_control = bool(entry.data.get(CONF_ACCOUNT) and entry.data.get(CONF_PASSWORD))
-    platforms = BASE_PLATFORMS + (CONTROL_PLATFORMS if has_control else [])
+    use_portal = has_control and bool(entry.data.get(CONF_USE_PORTAL))
+    platforms = (
+        BASE_PLATFORMS
+        + (CONTROL_PLATFORMS if has_control else [])
+        + (PORTAL_PLATFORMS if use_portal else [])
+    )
 
     # Enabled endpoint groups (default: all for backward compatibility)
     enabled_groups = set(entry.data.get(CONF_ENABLED_GROUPS, ALL_GROUPS))
@@ -103,10 +114,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         has_control=has_control,
     )
     coord_slow = LivoltekSlowCoordinator(hass, entry, api)
+    coord_portal = None
+    if use_portal:
+        portal = LivoltekPortalApi(
+            PORTAL_SERVERS[server_type],
+            entry.data[CONF_ACCOUNT],
+            entry.data[CONF_PASSWORD],
+            async_get_clientsession(hass),
+        )
+        coord_portal = LivoltekPortalCoordinator(hass, entry, portal)
 
     hass.data[DOMAIN][entry.entry_id] = {
         "coordinator": coord_medium,
         "coordinator_slow": coord_slow,
+        "coordinator_portal": coord_portal,
         "api": api,
         "config": entry.data,
         "has_control": has_control,
@@ -125,7 +146,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         except Exception:  # noqa: BLE001
             _LOGGER.warning("Slow coordinator first refresh failed, will retry")
 
-    _disable_work_mode_entities(hass, entry, site_id, device_sn)
+    # Portal is optional: a failure leaves its entities unavailable and is retried
+    if coord_portal is not None:
+        await coord_portal.async_refresh()
+        if not coord_portal.last_update_success:
+            _LOGGER.warning("Livoltek portal is not available, will retry: %s", coord_portal.last_exception)
+
+    _sync_work_mode_entities(hass, entry, site_id, device_sn, use_portal)
 
     await hass.config_entries.async_forward_entry_setups(entry, platforms)
 
@@ -227,6 +254,8 @@ def _register_services(hass: HomeAssistant) -> None:
 
         # Track selected mode in runtime
         runtime["current_workmode"] = str(work_mode)
+        if runtime.get("coordinator_portal") is not None:
+            runtime["coordinator_portal"].work_mode_changed(str(work_mode))
         new_data = {**entry.data, CONF_WORKMODE: str(work_mode)}
         hass.config_entries.async_update_entry(entry, data=new_data)
 
@@ -238,22 +267,35 @@ def _register_services(hass: HomeAssistant) -> None:
     )
 
 
-def _disable_work_mode_entities(hass: HomeAssistant, entry: ConfigEntry, site_id: str, device_sn: str) -> None:
-    """Disable work mode sensor/select once: the API does not report the actual work mode."""
-    if entry.data.get(CONF_WORK_MODE_HIDDEN):
+def _sync_work_mode_entities(
+    hass: HomeAssistant, entry: ConfigEntry, site_id: str, device_sn: str, use_portal: bool
+) -> None:
+    """Work mode sensor/select need the portal: only it reports the actual work mode.
+
+    Without the portal they are disabled once; with it, entities disabled by the
+    integration are enabled again. Entities disabled by the user are left alone.
+    """
+    if not use_portal and entry.data.get(CONF_WORK_MODE_HIDDEN):
         return
     ent_reg = er.async_get(hass)
     for platform, key in (("sensor", "work_mode"), ("select", "work_mode_select")):
         entity_id = ent_reg.async_get_entity_id(platform, DOMAIN, f"livoltek_{site_id}_{device_sn}_{key}")
         entity = ent_reg.async_get(entity_id) if entity_id else None
-        if entity and entity.disabled_by is None:
+        if entity is None:
+            continue
+        if use_portal and entity.disabled_by is er.RegistryEntryDisabler.INTEGRATION:
+            ent_reg.async_update_entity(entity_id, disabled_by=None)
+        elif not use_portal and entity.disabled_by is None:
             ent_reg.async_update_entity(entity_id, disabled_by=er.RegistryEntryDisabler.INTEGRATION)
-    hass.config_entries.async_update_entry(entry, data={**entry.data, CONF_WORK_MODE_HIDDEN: True})
+    if not entry.data.get(CONF_WORK_MODE_HIDDEN):
+        hass.config_entries.async_update_entry(entry, data={**entry.data, CONF_WORK_MODE_HIDDEN: True})
 
 
 def _cleanup_orphan_devices(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Remove devices whose group is no longer in enabled_groups."""
     enabled_groups = set(entry.data.get(CONF_ENABLED_GROUPS, ALL_GROUPS))
+    if entry.data.get(CONF_USE_PORTAL) and entry.data.get(CONF_ACCOUNT):
+        enabled_groups.add(GROUP_PORTAL)
     site_id = entry.data.get(CONF_SITE_ID, "")
     device_sn = entry.data.get(CONF_DEVICE_SN, "")
 
