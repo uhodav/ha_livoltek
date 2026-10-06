@@ -91,8 +91,12 @@
         "data": {
           "update_interval": "Update interval (minutes)",
           "enabled_groups": "Enabled data groups",
-          "battery_capacity": "Battery capacity (kWh, 0 = estimate from BMS)",
-          "battery_reserve_soc": "Battery reserve SoC (%)"
+          "battery_capacity": "Battery capacity",
+          "battery_reserve_soc": "Battery reserve SoC"
+        },
+        "data_description": {
+          "battery_capacity": "In kWh, e.g. 5 for a 5000 Wh (5 kWh) battery. 0 = automatic: from the portal if enabled, otherwise estimated from BMS Ah × voltage.",
+          "battery_reserve_soc": "SoC at which the inverter stops discharging. Used for the time-to-empty estimate; the portal value is used when available."
         }
       },
       "control": {

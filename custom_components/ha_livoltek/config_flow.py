@@ -574,11 +574,21 @@ class LivoltekOptionsFlow(config_entries.OptionsFlow):
                     vol.Required(
                         CONF_BATTERY_CAPACITY,
                         default=cur.get(CONF_BATTERY_CAPACITY, DEFAULT_BATTERY_CAPACITY),
-                    ): vol.All(vol.Coerce(float), vol.Range(min=0, max=1000)),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=0, max=1000, step=0.01, unit_of_measurement="kWh",
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
+                    ),
                     vol.Required(
                         CONF_BATTERY_RESERVE_SOC,
                         default=cur.get(CONF_BATTERY_RESERVE_SOC, DEFAULT_BATTERY_RESERVE_SOC),
-                    ): vol.All(vol.Coerce(int), vol.Range(min=0, max=90)),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=0, max=90, step=1, unit_of_measurement="%",
+                            mode=selector.NumberSelectorMode.SLIDER,
+                        )
+                    ),
                 }
             ),
             errors=errors,
