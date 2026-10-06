@@ -840,13 +840,22 @@ class LivoltekBatteryTimeSensor(LivoltekSensor):
         if power is None or soc is None or not capacity:
             return None, attrs
 
-        # energyPower: positive = charging, negative = discharging
+        # Direction from energyStatus: the sign of energyPower differs between inverters
+        status = str((data.get("power_flow") or {}).get("energyStatus") or "").lower()
+        if "discharg" in status:
+            charging = False
+        elif "charg" in status:
+            charging = True
+        else:
+            charging = power < 0
+        if abs(power) < self._MIN_POWER_KW:
+            return None, attrs
         if self._sensor_key == "battery_time_to_full":
-            if power < self._MIN_POWER_KW or soc >= 100:
+            if not charging or soc >= 100:
                 return None, attrs
             energy_kwh = (100 - soc) / 100 * capacity
         else:
-            if power > -self._MIN_POWER_KW or soc <= reserve:
+            if charging or soc <= reserve:
                 return None, attrs
             energy_kwh = (soc - reserve) / 100 * capacity
         return round(energy_kwh / abs(power) * 60), attrs

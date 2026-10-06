@@ -14,6 +14,7 @@ const LABELS = {
     configure: "Configure sensor entities",
     show_units_label: "Units",
     activity_label: "Activity",
+    status_label: "Direction (status)",
     connection_label: "Connection",
   },
   uk: {
@@ -30,6 +31,7 @@ const LABELS = {
     configure: "Вкажіть сенсори в конфігурації",
     show_units_label: "Одиниці виміру",
     activity_label: "Активність",
+    status_label: "Напрямок (статус)",
     connection_label: "Підключення",
   },
 };
@@ -58,9 +60,10 @@ class LivoltekPowerCardEditor extends HTMLElement {
       if (entry.platform !== 'ha_livoltek') continue;
       if (!entityId.startsWith('sensor.')) continue;
 
-      const key = this._sensorKeys.includes(entry.translation_key)
+      const roles = [...this._sensorKeys, ...this._statusKeys];
+      const key = roles.includes(entry.translation_key)
         ? entry.translation_key
-        : this._sensorKeys.find(k => entityId.endsWith('_' + k));
+        : roles.find(k => entityId.endsWith('_' + k));
       if (!key) continue;
 
       const inverterId = entry.device_id || 'ha_livoltek';
@@ -78,7 +81,7 @@ class LivoltekPowerCardEditor extends HTMLElement {
   _applyInverterSensors(inverterId) {
     if (!inverterId || !this._hass) return;
     const sensors = this._inverterMap[inverterId] || {};
-    this._sensorKeys.forEach(key => {
+    [...this._sensorKeys, ...this._statusKeys].forEach(key => {
       const entityId = sensors[key];
       if (entityId && this._hass.states[entityId]) {
         this._config[key] = entityId;
@@ -94,6 +97,7 @@ class LivoltekPowerCardEditor extends HTMLElement {
     this._hassSet = false;
     this._deviceds = [];
     this._sensorKeys = ['pv_power', 'grid_power', 'battery_power', 'battery_soc', 'load_power'];
+    this._statusKeys = ['battery_status', 'grid_status'];
     this._deviceInverter = '';
     this._inverterMap = {};
     this._rendered = false;
@@ -163,6 +167,9 @@ class LivoltekPowerCardEditor extends HTMLElement {
       this._sensorKeys.some(key => this._config[key] && sensors[key] === this._config[key]));
     if (current) {
       this._deviceInverter = current[0];
+      const missing = this._statusKeys.filter(key => !this._config[key] && current[1][key]);
+      missing.forEach(key => { this._config[key] = current[1][key]; });
+      if (missing.length) this.configChanged(this._config);
       return;
     }
 
@@ -297,6 +304,10 @@ class LivoltekPowerCardEditor extends HTMLElement {
               </div>
             </div>
             <div class="sensor-row">
+              <span style="min-width:90px">${this._t('status_label')}:</span>
+              <ha-entity-picker id="battery_status" allow-custom-entity></ha-entity-picker>
+            </div>
+            <div class="sensor-row">
               <span style="min-width:90px">${this._t('activity_label')}:</span>
               <ha-entity-picker id="active_sensor_battery" allow-custom-entity></ha-entity-picker>
             </div>
@@ -315,6 +326,10 @@ class LivoltekPowerCardEditor extends HTMLElement {
               <ha-switch id="show_units_grid_power" ${this._config.show_units_grid_power !== false ? 'checked' : ''}></ha-switch>
               <span>${this._t('show_units_label')}</span>
             </div>
+          </div>
+          <div class="sensor-row">
+            <span style="min-width:90px">${this._t('status_label')}:</span>
+            <ha-entity-picker id="grid_status" allow-custom-entity></ha-entity-picker>
           </div>
           <div class="sensor-row">
             <span style="min-width:90px">${this._t('activity_label')}:</span>
@@ -354,7 +369,7 @@ class LivoltekPowerCardEditor extends HTMLElement {
   // Override pickers stay empty unless set explicitly; the card then falls back to the main sensor
   setupEntityPickers() {
     if (!this._hass || !this._elementsLoaded) return;
-    [...this._sensorKeys, ...OVERRIDE_KEYS].forEach(id => {
+    [...this._sensorKeys, ...this._statusKeys, ...OVERRIDE_KEYS].forEach(id => {
       const picker = this.shadowRoot.getElementById(id);
       if (picker) {
         picker.hass = this._hass;
@@ -388,7 +403,7 @@ class LivoltekPowerCardEditor extends HTMLElement {
         show_units_battery_soc: this.shadowRoot.getElementById('show_units_battery_soc')?.checked ?? true,
         show_units_load_power: this.shadowRoot.getElementById('show_units_load_power')?.checked ?? true,
       };
-      OVERRIDE_KEYS.forEach(key => {
+      [...this._statusKeys, ...OVERRIDE_KEYS].forEach(key => {
         const value = this.shadowRoot.getElementById(key)?.value;
         if (value) this._config[key] = value;
         else delete this._config[key];

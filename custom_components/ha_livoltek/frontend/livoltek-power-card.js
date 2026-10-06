@@ -2,6 +2,8 @@ const CARD_TAG = "livoltek-power-card";
 const EDITOR_TAG = "livoltek-power-card-editor";
 const EDITOR_URL = "/ha_livoltek/livoltek-power-card-editor.js";
 const SENSOR_KEYS = ['pv_power', 'grid_power', 'battery_power', 'battery_soc', 'load_power'];
+// Flow direction comes from these when set; the sign of power differs between inverters
+const STATUS_KEYS = ['battery_status', 'grid_status'];
 
 const colorActive = '#00b7ee';
 const colorInactive = '#e0e5e9ff';
@@ -78,7 +80,7 @@ class LivoltekCard extends HTMLElement {
     };
     for (const [entityId, entry] of Object.entries(hass?.entities || {})) {
       if (entry.platform !== 'ha_livoltek' || !entityId.startsWith('sensor.')) continue;
-      const key = SENSOR_KEYS.includes(entry.translation_key) ? entry.translation_key : null;
+      const key = [...SENSOR_KEYS, ...STATUS_KEYS].includes(entry.translation_key) ? entry.translation_key : null;
       if (key && !config[key]) config[key] = entityId;
     }
     return config;
@@ -98,6 +100,7 @@ class LivoltekCard extends HTMLElement {
       c.pv_power, c.grid_power, c.battery_power, c.battery_soc, c.load_power,
       c.active_sensor_pv, c.active_sensor_battery, c.active_sensor_grid, c.active_sensor_load,
       c.connected_sensor_pv, c.connected_sensor_battery, c.connected_sensor_grid, c.connected_sensor_load,
+      c.battery_status, c.grid_status,
     ];
   }
 
@@ -135,6 +138,12 @@ class LivoltekCard extends HTMLElement {
         </div>
       </div>
     `;
+  }
+
+  _statusText(entityId) {
+    const stateObj = this._stateObj(entityId);
+    if (!stateObj) return '';
+    return String(stateObj.attributes.raw_value ?? stateObj.state).toLowerCase();
   }
 
   _isActiveState(stateObj) {
@@ -205,6 +214,16 @@ class LivoltekCard extends HTMLElement {
     const gridNum = Number(grid && !isNaN(Number(grid.state)) ? grid.state : 0);
     const loadNum = Number(load && !isNaN(Number(load.state)) ? load.state : 0);
 
+    // isBack: the dot moves from the device to the inverter
+    const batteryStatus = this._statusText(this._config.battery_status);
+    const batteryBack = batteryStatus.includes('discharg') ? true
+      : batteryStatus.includes('charg') ? false
+      : batteryNum > 0;
+    const gridStatus = this._statusText(this._config.grid_status);
+    const gridBack = gridStatus.includes('import') ? true
+      : gridStatus.includes('export') ? false
+      : gridNum > 0;
+
     const pvActive = this._isActiveState(pvActiveSensor);
     const batteryActive = this._isActiveState(batteryActiveSensor);
     const gridActive = this._isActiveState(gridActiveSensor);
@@ -256,7 +275,7 @@ class LivoltekCard extends HTMLElement {
               svgStyle: 'left: 0; right: 0; transform: rotateY(180deg);bottom: calc(var(--icon-width) / 2);left: var(--icon-width);',
               extraStyle: 'align-items: start;',
               isActive: batteryActive,
-              isBack: batteryNum < 0
+              isBack: batteryBack
             })}
           </div>
           <div class="li_powerflow-center">
@@ -276,7 +295,7 @@ class LivoltekCard extends HTMLElement {
               svgStyle: 'right: var(--icon-width);top: calc(var(--icon-width) / 2);left: 0; transform: rotateX(180deg);',
               extraStyle: 'display: flex; justify-content: flex-end; align-items: flex-start;',
               isActive: gridActive,
-              isBack: gridNum < 0
+              isBack: gridBack
             })}
             ${this._renderBlock({
               type: 'load',
