@@ -216,8 +216,9 @@ class LivoltekCard extends HTMLElement {
 
     // isBack: the dot moves from the device to the inverter
     const batteryStatus = this._statusText(this._config.battery_status);
+    // "Importing" is reported while the battery charges from the grid
     const batteryBack = batteryStatus.includes('discharg') ? true
-      : batteryStatus.includes('charg') ? false
+      : batteryStatus.includes('charg') || batteryStatus.includes('import') ? false
       : batteryNum > 0;
     const gridStatus = this._statusText(this._config.grid_status);
     const gridBack = gridStatus.includes('import') ? true

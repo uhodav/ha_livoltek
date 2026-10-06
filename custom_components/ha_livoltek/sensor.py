@@ -90,6 +90,32 @@ def _get_last_alarm_field(alarms_data: dict, field: str):
     return records[0].get(field)
 
 
+def _get_field(data: dict, field: str):
+    """Field lookup tolerant to case and stray spaces (e.g. BMSCapacity vs bmscapacity)."""
+    if field in data:
+        return data[field]
+    wanted = field.lower()
+    for key, value in data.items():
+        if isinstance(key, str) and key.strip().lower() == wanted:
+            return value
+    return None
+
+
+def _battery_charging(power_flow: dict) -> bool | None:
+    """Charging direction from energyStatus; the sign of energyPower differs between inverters.
+
+    Observed statuses: charging, disCharging, idel and Importing (charging from the grid).
+    Without a usable status: negative power = charging.
+    """
+    status = str(power_flow.get("energyStatus") or "").lower()
+    if "discharg" in status:
+        return False
+    if "charg" in status or "import" in status:
+        return True
+    power = _safe_float(power_flow.get("energyPower"))
+    return None if power is None else power < 0
+
+
 def _storage_latest(storage: dict, field: str) -> float | None:
     """Latest non-empty value of a field from the storage historyMap."""
     history = storage.get("historyMap")
@@ -149,7 +175,7 @@ def _battery_capacity(entry_data: dict, data: dict, portal: dict) -> tuple[float
     if from_portal:
         return from_portal, "portal"
     storage = data.get("storage") or {}
-    amp_hours = _safe_float(storage.get("BMSCapacity"))
+    amp_hours = _safe_float(_get_field(storage, "BMSCapacity"))
     voltage = _safe_float((data.get("realtime") or {}).get("batteryVoltage")) or _storage_latest(storage, "energyVolage")
     if amp_hours and voltage:
         return round(amp_hours * voltage / 1000, 2), "estimated"
@@ -553,7 +579,7 @@ class LivoltekSensor(CoordinatorEntity, SensorEntity):
         if self._sensor_key == "work_mode":
             return self._parse_workmode(source_data)
 
-        raw_value = source_data.get(self._data_field)
+        raw_value = _get_field(source_data, self._data_field)
         if raw_value is None:
             return None
 
@@ -822,8 +848,10 @@ class LivoltekBatteryTimeSensor(LivoltekSensor):
 
     def _estimate(self) -> tuple[float | None, dict[str, Any]]:
         data = self.coordinator.data or {}
-        power = _safe_float((data.get("power_flow") or {}).get("energyPower"))
+        power_flow = data.get("power_flow") or {}
+        power = _safe_float(power_flow.get("energyPower"))
         soc = _battery_soc(data)
+        charging = _battery_charging(power_flow)
         portal = _portal_data(self.hass, self._entry_id)
         capacity, capacity_source = _battery_capacity(self._entry_data, data, portal)
         reserve, reserve_source = _safe_float(portal.get("dischargeEndSOC")), "portal"
@@ -836,27 +864,34 @@ class LivoltekBatteryTimeSensor(LivoltekSensor):
             "battery_capacity_source": capacity_source,
             "battery_reserve_soc": reserve,
             "battery_reserve_soc_source": reserve_source,
+            "battery_power": power,
+            "battery_soc": soc,
+            "api_battery_status": power_flow.get("energyStatus"),
+            "direction": None if charging is None else ("charging" if charging else "discharging"),
         }
-        if power is None or soc is None or not capacity:
-            return None, attrs
 
-        # Direction from energyStatus: the sign of energyPower differs between inverters
-        status = str((data.get("power_flow") or {}).get("energyStatus") or "").lower()
-        if "discharg" in status:
-            charging = False
-        elif "charg" in status:
-            charging = True
-        else:
-            charging = power < 0
+        def unknown(reason: str) -> tuple[None, dict[str, Any]]:
+            return None, {**attrs, "unknown_reason": reason}
+
+        if power is None:
+            return unknown("no battery power")
+        if soc is None:
+            return unknown("no battery SoC")
+        if not capacity:
+            return unknown("no battery capacity: set it in the integration options")
         if abs(power) < self._MIN_POWER_KW:
-            return None, attrs
+            return unknown("battery idle")
         if self._sensor_key == "battery_time_to_full":
-            if not charging or soc >= 100:
-                return None, attrs
+            if not charging:
+                return unknown("not charging")
+            if soc >= 100:
+                return unknown("battery full")
             energy_kwh = (100 - soc) / 100 * capacity
         else:
-            if charging or soc <= reserve:
-                return None, attrs
+            if charging:
+                return unknown("not discharging")
+            if soc <= reserve:
+                return unknown("at reserve SoC")
             energy_kwh = (soc - reserve) / 100 * capacity
         return round(energy_kwh / abs(power) * 60), attrs
 
