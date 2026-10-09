@@ -202,7 +202,7 @@ A custom Lovelace card for Home Assistant to visualize Livoltek inverter and BES
 - Visual editor for easy configuration in Lovelace UI
 
 ### Installation
-1. The integration serves the card at `/ha_livoltek/livoltek-power-card.js` and loads it automatically, no manual copy or Lovelace resource is needed. If you added the card as a resource manually before, remove that resource.
+1. The card is set up automatically, no manual copy or Lovelace resource is needed. On start the integration copies it to `config/www/ha_livoltek/` and keeps the dashboard resource `/local/ha_livoltek/livoltek-power-card.js?v=<version>` up to date, so the card is available right after a Home Assistant restart, before the integration itself has loaded (otherwise a dashboard opened during startup shows "Custom element doesn't exist"). Dashboards in YAML mode get the card from `/ha_livoltek/livoltek-power-card.js`. If you added the card as a resource manually before (any other URL), remove that resource.
 2. Add the card via UI: "Add Card" → "Custom: Livoltek Power Card". Use the visual editor to select your sensors.
 
 See full details and usage: [frontend/README.md](custom_components/ha_livoltek/frontend/README.md)
@@ -401,7 +401,7 @@ data:
 - Візуальний редактор для налаштування прямо в Lovelace
 
 ### Встановлення
-1. Інтеграція сама роздає картку за адресою `/ha_livoltek/livoltek-power-card.js` і підключає її автоматично, копіювати файли чи додавати ресурс Lovelace не потрібно. Якщо раніше ви додали картку як ресурс вручну, видаліть цей ресурс.
+1. Картка підключається автоматично, копіювати файли чи додавати ресурс Lovelace не потрібно. Під час запуску інтеграція копіює її в `config/www/ha_livoltek/` і підтримує ресурс панелей `/local/ha_livoltek/livoltek-power-card.js?v=<версія>`, тож картка доступна одразу після перезапуску Home Assistant, ще до завантаження самої інтеграції (інакше панель, відкрита під час старту, показує «Custom element doesn't exist»). Панелі в YAML-режимі отримують картку з адреси `/ha_livoltek/livoltek-power-card.js`. Якщо раніше ви додали картку як ресурс вручну (з іншою адресою), видаліть цей ресурс.
 2. Додайте картку через UI: "Додати картку" → "Custom: Livoltek Power Card". Виберіть сенсори через візуальний редактор.
 
 ---

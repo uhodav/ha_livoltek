@@ -32,7 +32,7 @@ This document describes how to test and develop the `livoltek-power-card` custom
 ## Development Tips
 - Use browser DevTools for debugging and live editing.
 - After editing JS files, always do a hard refresh (Ctrl+F5) to avoid cache issues.
-- In Home Assistant the integration serves the card at `/ha_livoltek/livoltek-power-card.js` and loads it automatically; no manual copy or Lovelace resource is needed.
+- In Home Assistant the integration sets the card up automatically (copies it to `config/www/ha_livoltek/` and registers the dashboard resource `/local/ha_livoltek/livoltek-power-card.js?v=<version>`); no manual copy or Lovelace resource is needed.
 
 ## Example Card Config
 ```yaml

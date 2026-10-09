@@ -5,7 +5,6 @@ from datetime import timedelta
 
 import voluptuous as vol
 from pathlib import Path
-from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -15,6 +14,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.loader import async_get_integration
 
 from .api import LivoltekApi, LivoltekApiError
+from .card_loader import async_register_cards
 from .const import (
     ALL_GROUPS,
     CONF_ACCOUNT,
@@ -54,7 +54,6 @@ CONTROL_PLATFORMS = ["button", "select"]
 PORTAL_PLATFORMS = ["binary_sensor"]
 
 FRONTEND_KEY = "_frontend_registered"
-FRONTEND_URL = "/ha_livoltek/livoltek-power-card.js"
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Livoltek from a config entry."""
@@ -71,7 +70,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             for fname, url in files
         ])
         integration = await async_get_integration(hass, DOMAIN)
-        add_extra_js_url(hass, f"{FRONTEND_URL}?v={integration.version}")
+        await async_register_cards(
+            hass, DOMAIN, frontend_dir, ["livoltek-power-card.js"], "/ha_livoltek", str(integration.version)
+        )
         hass.data[DOMAIN][FRONTEND_KEY] = True
 
     server_type = entry.data[CONF_SERVER_TYPE]
