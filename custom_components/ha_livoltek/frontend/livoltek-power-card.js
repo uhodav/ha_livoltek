@@ -346,10 +346,19 @@ class LivoltekCard extends HTMLElement {
     const batteryTime = online && !shown.battery_power.stale && !shown.battery_soc.stale
       ? this._batteryTime(Number(soc?.state), batteryNum * (batteryUnit === 'kW' ? 1000 : 1), batteryBack)
       : '';
-    const pvActive = online && this._isActiveState(pvActiveSensor);
-    const batteryActive = online && this._isActiveState(batteryActiveSensor);
-    const gridActive = online && this._isActiveState(gridActiveSensor);
-    const loadActive = online && this._isActiveState(loadActiveSensor);
+    // A power below min_flow_power (50 W by default) is idle: no moving dot
+    const minFlowW = Number(this._config.min_flow_power ?? 50);
+    const flowActive = (stateObj) => {
+      if (!online || !this._isActiveState(stateObj)) return false;
+      const unit = stateObj.attributes?.unit_of_measurement;
+      const numeric = Number(stateObj.state);
+      if (!['W', 'kW'].includes(unit) || !Number.isFinite(numeric)) return true;
+      return Math.abs(numeric) * (unit === 'kW' ? 1000 : 1) >= minFlowW;
+    };
+    const pvActive = flowActive(pvActiveSensor);
+    const batteryActive = flowActive(batteryActiveSensor);
+    const gridActive = flowActive(gridActiveSensor);
+    const loadActive = flowActive(loadActiveSensor);
 
     const pvConnected = online && isConnected(pvConnectedSensor);
     const batteryConnected = online && isConnected(batteryConnectedSensor);
@@ -617,7 +626,7 @@ if (!window.customCards.some(card => card.type === CARD_TAG)) {
 }
 
 console.groupCollapsed(
-  '%c LIVOLTEK-POWER-CARD %c v1.6.0 ',
+  '%c LIVOLTEK-POWER-CARD %c v1.7.0 ',
   'color: white; background: #488fc2; font-weight: 700;',
   'color: #488fc2; background: white; font-weight: 700;'
 );

@@ -26,6 +26,7 @@ const LABELS = {
     capacity_hint: "kWh, or a sensor in kWh / Wh / Ah",
     min_soc_label: "Discharge to, %",
     max_soc_label: "Charge to, %",
+    min_flow_label: "No flow animation below, W",
   },
   uk: {
     title_label: "Заголовок",
@@ -53,6 +54,7 @@ const LABELS = {
     capacity_hint: "кВт·год або сенсор у кВт·год / Вт·год / А·год",
     min_soc_label: "Розряд до, %",
     max_soc_label: "Заряд до, %",
+    min_flow_label: "Без анімації потоку нижче, Вт",
   },
 };
 
@@ -64,7 +66,7 @@ const OVERRIDE_KEYS = [
 
 const ICON_KEYS = ['pv_icon', 'battery_icon', 'grid_icon', 'load_icon'];
 const POWER_UNITS = ['', 'W', 'kW', 'auto'];
-const BATTERY_TIME_KEYS = ['battery_capacity', 'battery_min_soc', 'battery_max_soc'];
+const BATTERY_TIME_KEYS = ['battery_capacity', 'battery_min_soc', 'battery_max_soc', 'min_flow_power'];
 
 const escapeHtml = (value) => String(value ?? '')
   .replace(/&/g, '&amp;')
@@ -285,6 +287,10 @@ class LivoltekPowerCardEditor extends HTMLElement {
             ${POWER_UNITS.map(u => `<option value="${u}" ${(this._config.power_unit || '') === u ? 'selected' : ''}>${
               u === '' ? this._t('power_unit_sensor') : u === 'auto' ? this._t('power_unit_auto') : u}</option>`).join('')}
           </select>
+        </div>
+        <div class="option">
+          <label>${this._t('min_flow_label')}</label>
+          <input type="number" min="0" id="min_flow_power" value="${escapeHtml(this._config.min_flow_power)}" placeholder="50" />
         </div>
         <div class="option">
           <label>${this._t('online_label')}</label>
