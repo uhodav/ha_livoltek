@@ -11,6 +11,8 @@ const BUILTIN_ICONS = { solar: 'pv', generator: 'generator', battery: 'battery',
 
 const colorActive = '#00b7ee';
 const colorInactive = '#e0e5e9ff';
+const colorStale = 'var(--secondary-text-color, #8a8a8a)';
+const UNAVAILABLE = ['unknown', 'unavailable', '', null, undefined];
 
 const TIME_LABELS = {
   en: { h: 'h', min: 'min', to: 'to' },
@@ -188,6 +190,43 @@ class LivoltekCard extends HTMLElement {
     return escapeHtml(`~${duration} ${t.to} ${target} %`);
   }
 
+  // Last valid value from the history, for a sensor that is unavailable now (inverter offline). Re-read at most every 5 min.
+  _fetchLastKnown(entityId) {
+    this._lastKnown = this._lastKnown || {};
+    const entry = this._lastKnown[entityId];
+    if (entry && (entry.pending || Date.now() - entry.at < 5 * 60 * 1000)) return;
+    this._lastKnown[entityId] = { ...entry, pending: true, at: Date.now() };
+    this._hass.callWS({
+      type: 'history/history_during_period',
+      start_time: new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString(),
+      entity_ids: [entityId],
+      minimal_response: true,
+      no_attributes: true,
+      significant_changes_only: false,
+    }).then((result) => {
+      const valid = (result?.[entityId] || []).filter(item => !UNAVAILABLE.includes(item.s));
+      const last = valid[valid.length - 1];
+      this._lastKnown[entityId] = { state: last ? last.s : null, pending: false, at: Date.now() };
+      if (last) {
+        this._renderKey = null;
+        this._render();
+      }
+    }).catch(() => {
+      this._lastKnown[entityId] = { state: entry?.state ?? null, pending: false, at: Date.now() };
+    });
+  }
+
+  // The value to show and whether it is stale (offline, or the last known value of an unavailable sensor)
+  _shownState(entityId, online) {
+    const stateObj = this._stateObj(entityId);
+    if (!entityId || (stateObj && !UNAVAILABLE.includes(stateObj.state))) return { stateObj, stale: !online };
+    if (this._config.last_known === false) return { stateObj, stale: true };
+    this._fetchLastKnown(entityId);
+    const known = this._lastKnown?.[entityId]?.state;
+    if (UNAVAILABLE.includes(known)) return { stateObj, stale: true };
+    return { stateObj: { state: known, attributes: stateObj?.attributes || {} }, stale: true };
+  }
+
   _metric(label, value, icon, accent = false) {
     return `
       <div class="li_metric ${accent ? "li_metric--accent" : ""}">
@@ -226,11 +265,18 @@ class LivoltekCard extends HTMLElement {
     if (!this._config || !this._hass) return;
     this._ensureCard();
     if (!this._stateChanged()) return;
-    const pv = this._stateObj(this._config.pv_power);
-    const grid = this._stateObj(this._config.grid_power);
-    const battery = this._stateObj(this._config.battery_power);
-    const soc = this._stateObj(this._config.battery_soc);
-    const load = this._stateObj(this._config.load_power);
+    // The inverter is offline: values are the last known ones (grey), flows are not animated, blocks are not connected
+    const online = !this._config.online_sensor || this._isActiveState(this._stateObj(this._config.online_sensor));
+    const shown = {};
+    ['pv_power', 'grid_power', 'battery_power', 'battery_soc', 'load_power'].forEach(key => {
+      shown[key] = this._shownState(this._config[key], online);
+    });
+    const pv = shown.pv_power.stateObj;
+    const grid = shown.grid_power.stateObj;
+    const battery = shown.battery_power.stateObj;
+    const soc = shown.battery_soc.stateObj;
+    const load = shown.load_power.stateObj;
+    const valueColor = (key, color) => shown[key].stale ? colorStale : color;
 
     const pvActiveSensor = this._stateObj(this._config.active_sensor_pv || this._config.pv_power);
     const batteryActiveSensor = this._stateObj(this._config.active_sensor_battery || this._config.battery_power);
@@ -296,10 +342,8 @@ class LivoltekCard extends HTMLElement {
       : gridStatus.includes('export') ? false
       : gridNum > 0;
 
-    // The inverter is offline: the cloud keeps the last values, so the flows are not animated
-    const online = !this._config.online_sensor || this._isActiveState(this._stateObj(this._config.online_sensor));
     const batteryUnit = battery?.attributes?.unit_of_measurement;
-    const batteryTime = online && battery && !['unknown', 'unavailable'].includes(battery.state)
+    const batteryTime = online && !shown.battery_power.stale && !shown.battery_soc.stale
       ? this._batteryTime(Number(soc?.state), batteryNum * (batteryUnit === 'kW' ? 1000 : 1), batteryBack)
       : '';
     const pvActive = online && this._isActiveState(pvActiveSensor);
@@ -307,10 +351,10 @@ class LivoltekCard extends HTMLElement {
     const gridActive = online && this._isActiveState(gridActiveSensor);
     const loadActive = online && this._isActiveState(loadActiveSensor);
 
-    const pvConnected = isConnected(pvConnectedSensor);
-    const batteryConnected = isConnected(batteryConnectedSensor);
-    const gridConnected = isConnected(gridConnectedSensor);
-    const loadConnected = isConnected(loadConnectedSensor);
+    const pvConnected = online && isConnected(pvConnectedSensor);
+    const batteryConnected = online && isConnected(batteryConnectedSensor);
+    const gridConnected = online && isConnected(gridConnectedSensor);
+    const loadConnected = online && isConnected(loadConnectedSensor);
 
     this._card.innerHTML = `
       <div class="li_powerflow-card">
@@ -325,7 +369,7 @@ class LivoltekCard extends HTMLElement {
               entity: this._config.pv_power,
               values: [{
                 style: 'position: absolute; left: calc(var(--icon-width) + 2px); top: calc((var(--icon-width) / 2) - 24px);',
-                spanStyle: 'color:#0382cc; white-space: nowrap;',
+                spanStyle: `color:${valueColor('pv_power', '#0382cc')}; white-space: nowrap;`,
                 text: pvNum ? pvVal : ''
               }],
               svgId: 'pv-inverter',
@@ -341,13 +385,13 @@ class LivoltekCard extends HTMLElement {
               values: [
                 {
                   style: 'position: absolute; left: calc(var(--icon-width) + 2px); top: calc((var(--icon-width) / 2 - 28px));',
-                  spanStyle: 'color:#21a240; white-space: nowrap; font-weight: 600;',
+                  spanStyle: `color:${valueColor('battery_soc', '#21a240')}; white-space: nowrap; font-weight: 600;`,
                   entity: this._config.battery_soc,
                   text: socVal
                 },
                 {
                   style: 'position: absolute; left: calc(var(--icon-width) + 2px); top: calc((var(--icon-width) / 2));',
-                  spanStyle: 'color:#0382cc; white-space: nowrap;',
+                  spanStyle: `color:${valueColor('battery_power', '#0382cc')}; white-space: nowrap;`,
                   text: batteryNum ? batteryVal : ''
                 },
                 {
@@ -375,7 +419,7 @@ class LivoltekCard extends HTMLElement {
               entity: this._config.grid_power,
               values: [{
                 style: 'position: absolute; right: calc(var(--icon-width) + 2px); top: calc((var(--icon-width) / 2) - 24px);',
-                spanStyle: 'color:#0382cc; white-space: nowrap;',
+                spanStyle: `color:${valueColor('grid_power', '#0382cc')}; white-space: nowrap;`,
                 text: gridNum ? gridVal : ''
               }],
               svgId: 'grid-inverter',
@@ -391,7 +435,7 @@ class LivoltekCard extends HTMLElement {
               entity: this._config.load_power,
               values: [{
                 style: 'position: absolute; right: calc(var(--icon-width) + 2px); top: calc((var(--icon-width) / 2));',
-                spanStyle: 'color:#0382cc; white-space: nowrap;',
+                spanStyle: `color:${valueColor('load_power', '#0382cc')}; white-space: nowrap;`,
                 text: loadNum ? loadVal : ''
               }],
               svgId: 'load-inverter',
@@ -573,7 +617,7 @@ if (!window.customCards.some(card => card.type === CARD_TAG)) {
 }
 
 console.groupCollapsed(
-  '%c LIVOLTEK-POWER-CARD %c v1.5.0 ',
+  '%c LIVOLTEK-POWER-CARD %c v1.6.0 ',
   'color: white; background: #488fc2; font-weight: 700;',
   'color: #488fc2; background: white; font-weight: 700;'
 );
