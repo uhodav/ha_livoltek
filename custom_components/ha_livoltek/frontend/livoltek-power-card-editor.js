@@ -18,6 +18,10 @@ const LABELS = {
     connection_label: "Connection",
     icon_label: "Icon",
     icon_hint: "solar, generator, battery, grid, home, mdi:… or image URL",
+    power_unit_label: "Power unit",
+    power_unit_sensor: "As the sensor",
+    power_unit_auto: "Auto (kW from 1000 W)",
+    online_label: "Online sensor (no flow animation while offline)",
   },
   uk: {
     title_label: "Заголовок",
@@ -37,6 +41,10 @@ const LABELS = {
     connection_label: "Підключення",
     icon_label: "Іконка",
     icon_hint: "solar, generator, battery, grid, home, mdi:… або URL картинки",
+    power_unit_label: "Одиниці потужності",
+    power_unit_sensor: "Як у сенсора",
+    power_unit_auto: "Авто (кВт від 1000 Вт)",
+    online_label: "Сенсор «онлайн» (без анімації потоків, коли офлайн)",
   },
 };
 
@@ -47,6 +55,7 @@ const OVERRIDE_KEYS = [
 ];
 
 const ICON_KEYS = ['pv_icon', 'battery_icon', 'grid_icon', 'load_icon'];
+const POWER_UNITS = ['', 'W', 'kW', 'auto'];
 
 const escapeHtml = (value) => String(value ?? '')
   .replace(/&/g, '&amp;')
@@ -261,6 +270,17 @@ class LivoltekPowerCardEditor extends HTMLElement {
           <label>${this._t('title_label')}</label>
           <input type="text" id="title" value="${escapeHtml(this._config.title)}" placeholder="${this._t('title_label')}" />
         </div>
+        <div class="option">
+          <label>${this._t('power_unit_label')}</label>
+          <select id="power_unit">
+            ${POWER_UNITS.map(u => `<option value="${u}" ${(this._config.power_unit || '') === u ? 'selected' : ''}>${
+              u === '' ? this._t('power_unit_sensor') : u === 'auto' ? this._t('power_unit_auto') : u}</option>`).join('')}
+          </select>
+        </div>
+        <div class="option">
+          <label>${this._t('online_label')}</label>
+          <ha-entity-picker id="online_sensor" allow-custom-entity></ha-entity-picker>
+        </div>
         ${this._deviceds.length ? `
         <div class="option">
           <label>${this._t('device_label')}</label>
@@ -395,12 +415,12 @@ class LivoltekPowerCardEditor extends HTMLElement {
   // Override pickers stay empty unless set explicitly; the card then falls back to the main sensor
   setupEntityPickers() {
     if (!this._hass || !this._elementsLoaded) return;
-    [...this._sensorKeys, ...this._statusKeys, ...OVERRIDE_KEYS].forEach(id => {
+    [...this._sensorKeys, ...this._statusKeys, ...OVERRIDE_KEYS, 'online_sensor'].forEach(id => {
       const picker = this.shadowRoot.getElementById(id);
       if (picker) {
         picker.hass = this._hass;
         picker.value = this._config[id] || '';
-        picker.includeDomains = OVERRIDE_KEYS.includes(id) ? ['sensor', 'binary_sensor'] : ['sensor'];
+        picker.includeDomains = OVERRIDE_KEYS.includes(id) || id === 'online_sensor' ? ['sensor', 'binary_sensor'] : ['sensor'];
       }
     });
   }
@@ -429,7 +449,7 @@ class LivoltekPowerCardEditor extends HTMLElement {
         show_units_battery_soc: this.shadowRoot.getElementById('show_units_battery_soc')?.checked ?? true,
         show_units_load_power: this.shadowRoot.getElementById('show_units_load_power')?.checked ?? true,
       };
-      [...this._statusKeys, ...OVERRIDE_KEYS].forEach(key => {
+      [...this._statusKeys, ...OVERRIDE_KEYS, 'online_sensor', 'power_unit'].forEach(key => {
         const value = this.shadowRoot.getElementById(key)?.value;
         if (value) this._config[key] = value;
         else delete this._config[key];
@@ -441,7 +461,7 @@ class LivoltekPowerCardEditor extends HTMLElement {
       });
       this.configChanged(this._config);
     };
-    this.shadowRoot.querySelectorAll('input, ha-switch').forEach(el => {
+    this.shadowRoot.querySelectorAll('input, ha-switch, #power_unit').forEach(el => {
       el.addEventListener('change', update);
     });
     this.shadowRoot.querySelectorAll('ha-entity-picker').forEach(el => {

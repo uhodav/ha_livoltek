@@ -214,6 +214,11 @@ pv_power: sensor.generator_power
 pv_icon: generator # or mdi:engine, or /local/images/generator.png
 ```
 
+### Units, details, offline
+- `power_unit`: `W`, `kW` or `auto` (kW from 1000 W) for PV, battery, grid and load power. Without it the sensor's own unit is shown.
+- A click on a block (picture or value) opens that sensor's details with its history: PV, battery power, battery SoC, grid, load.
+- `online_sensor`: a sensor that is `on` while the inverter is online. While it is off the flows are not animated, so values a cloud keeps after the inverter went offline do not look live.
+
 See full details and usage: [frontend/README.md](custom_components/ha_livoltek/frontend/README.md)
 
 ---
@@ -421,6 +426,11 @@ type: custom:livoltek-power-card
 pv_power: sensor.generator_power
 pv_icon: generator # або mdi:engine, або /local/images/generator.png
 ```
+
+### Одиниці, деталі, офлайн
+- `power_unit`: `W`, `kW` або `auto` (кВт від 1000 Вт) для потужності PV, акумулятора, мережі та споживання. Без нього — одиниці сенсора.
+- Клік по блоку (картинка або значення) відкриває деталі цього сенсора з історією: PV, потужність акумулятора, заряд акумулятора, мережа, споживання.
+- `online_sensor`: сенсор, який `on`, поки інвертор онлайн. Коли він вимкнений, потоки не анімуються, щоб значення, які хмара тримає після зникнення інвертора, не виглядали живими.
 
 ---
 
