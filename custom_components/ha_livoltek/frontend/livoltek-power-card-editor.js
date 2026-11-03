@@ -16,6 +16,8 @@ const LABELS = {
     activity_label: "Activity",
     status_label: "Direction (status)",
     connection_label: "Connection",
+    icon_label: "Icon",
+    icon_hint: "solar, generator, battery, grid, home, mdi:… or image URL",
   },
   uk: {
     title_label: "Заголовок",
@@ -33,6 +35,8 @@ const LABELS = {
     activity_label: "Активність",
     status_label: "Напрямок (статус)",
     connection_label: "Підключення",
+    icon_label: "Іконка",
+    icon_hint: "solar, generator, battery, grid, home, mdi:… або URL картинки",
   },
 };
 
@@ -41,6 +45,8 @@ const OVERRIDE_KEYS = [
   'active_sensor_pv', 'active_sensor_battery', 'active_sensor_grid', 'active_sensor_load',
   'connected_sensor_pv', 'connected_sensor_battery', 'connected_sensor_grid', 'connected_sensor_load',
 ];
+
+const ICON_KEYS = ['pv_icon', 'battery_icon', 'grid_icon', 'load_icon'];
 
 const escapeHtml = (value) => String(value ?? '')
   .replace(/&/g, '&amp;')
@@ -187,6 +193,10 @@ class LivoltekPowerCardEditor extends HTMLElement {
       const toggle = this.shadowRoot.getElementById(`show_units_${key}`);
       if (toggle) toggle.checked = this._config[`show_units_${key}`] !== false;
     });
+    ICON_KEYS.forEach(key => {
+      const input = this.shadowRoot.getElementById(key);
+      if (input && input.value !== (this._config[key] || '')) input.value = this._config[key] || '';
+    });
   }
 
   configChanged(newConfig) {
@@ -281,6 +291,10 @@ class LivoltekPowerCardEditor extends HTMLElement {
             <span style="min-width:90px">${this._t('connection_label')}:</span>
             <ha-entity-picker id="connected_sensor_pv" allow-custom-entity></ha-entity-picker>
           </div>
+          <div class="sensor-row">
+            <span style="min-width:90px">${this._t('icon_label')}:</span>
+            <input type="text" id="pv_icon" value="${escapeHtml(this._config.pv_icon)}" placeholder="${this._t('icon_hint')}" />
+          </div>
         </ha-expansion-panel>
 
         <ha-expansion-panel outlined>
@@ -315,6 +329,10 @@ class LivoltekPowerCardEditor extends HTMLElement {
               <span style="min-width:90px">${this._t('connection_label')}:</span>
               <ha-entity-picker id="connected_sensor_battery" allow-custom-entity></ha-entity-picker>
             </div>
+            <div class="sensor-row">
+              <span style="min-width:90px">${this._t('icon_label')}:</span>
+              <input type="text" id="battery_icon" value="${escapeHtml(this._config.battery_icon)}" placeholder="${this._t('icon_hint')}" />
+            </div>
           </div>
         </ha-expansion-panel>
 
@@ -339,6 +357,10 @@ class LivoltekPowerCardEditor extends HTMLElement {
             <span style="min-width:90px">${this._t('connection_label')}:</span>
             <ha-entity-picker id="connected_sensor_grid" allow-custom-entity></ha-entity-picker>
           </div>
+          <div class="sensor-row">
+            <span style="min-width:90px">${this._t('icon_label')}:</span>
+            <input type="text" id="grid_icon" value="${escapeHtml(this._config.grid_icon)}" placeholder="${this._t('icon_hint')}" />
+          </div>
         </ha-expansion-panel>
 
         <ha-expansion-panel outlined>
@@ -357,6 +379,10 @@ class LivoltekPowerCardEditor extends HTMLElement {
           <div class="sensor-row">
             <span style="min-width:90px">${this._t('connection_label')}:</span>
             <ha-entity-picker id="connected_sensor_load" allow-custom-entity></ha-entity-picker>
+          </div>
+          <div class="sensor-row">
+            <span style="min-width:90px">${this._t('icon_label')}:</span>
+            <input type="text" id="load_icon" value="${escapeHtml(this._config.load_icon)}" placeholder="${this._t('icon_hint')}" />
           </div>
         </ha-expansion-panel>
       </div>
@@ -405,6 +431,11 @@ class LivoltekPowerCardEditor extends HTMLElement {
       };
       [...this._statusKeys, ...OVERRIDE_KEYS].forEach(key => {
         const value = this.shadowRoot.getElementById(key)?.value;
+        if (value) this._config[key] = value;
+        else delete this._config[key];
+      });
+      ICON_KEYS.forEach(key => {
+        const value = this.shadowRoot.getElementById(key)?.value.trim();
         if (value) this._config[key] = value;
         else delete this._config[key];
       });

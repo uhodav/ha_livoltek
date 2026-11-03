@@ -205,6 +205,15 @@ A custom Lovelace card for Home Assistant to visualize Livoltek inverter and BES
 1. The card is set up automatically, no manual copy or Lovelace resource is needed. On start the integration copies it to `config/www/ha_livoltek/` and keeps the dashboard resource `/local/ha_livoltek/livoltek-power-card.js?v=<version>` up to date, so the card is available right after a Home Assistant restart, before the integration itself has loaded (otherwise a dashboard opened during startup shows "Custom element doesn't exist"). Dashboards in YAML mode get the card from `/ha_livoltek/livoltek-power-card.js`. If you added the card as a resource manually before (any other URL), remove that resource.
 2. Add the card via UI: "Add Card" → "Custom: Livoltek Power Card". Use the visual editor to select your sensors.
 
+### Icons
+Each block can show another picture: `pv_icon`, `battery_icon`, `grid_icon`, `load_icon` (also in the visual editor, field "Icon"). The value is a built-in picture (`solar`, `generator`, `battery`, `grid`, `home`), an `mdi:` icon or an image URL. For example, a generator instead of the solar panel:
+
+```yaml
+type: custom:livoltek-power-card
+pv_power: sensor.generator_power
+pv_icon: generator # or mdi:engine, or /local/images/generator.png
+```
+
 See full details and usage: [frontend/README.md](custom_components/ha_livoltek/frontend/README.md)
 
 ---
@@ -403,6 +412,15 @@ data:
 ### Встановлення
 1. Картка підключається автоматично, копіювати файли чи додавати ресурс Lovelace не потрібно. Під час запуску інтеграція копіює її в `config/www/ha_livoltek/` і підтримує ресурс панелей `/local/ha_livoltek/livoltek-power-card.js?v=<версія>`, тож картка доступна одразу після перезапуску Home Assistant, ще до завантаження самої інтеграції (інакше панель, відкрита під час старту, показує «Custom element doesn't exist»). Панелі в YAML-режимі отримують картку з адреси `/ha_livoltek/livoltek-power-card.js`. Якщо раніше ви додали картку як ресурс вручну (з іншою адресою), видаліть цей ресурс.
 2. Додайте картку через UI: "Додати картку" → "Custom: Livoltek Power Card". Виберіть сенсори через візуальний редактор.
+
+### Іконки
+Кожен блок може показувати іншу картинку: `pv_icon`, `battery_icon`, `grid_icon`, `load_icon` (і у візуальному редакторі, поле «Іконка»). Значення — вбудована картинка (`solar`, `generator`, `battery`, `grid`, `home`), іконка `mdi:` або URL картинки. Наприклад, генератор замість сонячної панелі:
+
+```yaml
+type: custom:livoltek-power-card
+pv_power: sensor.generator_power
+pv_icon: generator # або mdi:engine, або /local/images/generator.png
+```
 
 ---
 

@@ -5,6 +5,9 @@ const SENSOR_KEYS = ['pv_power', 'grid_power', 'battery_power', 'battery_soc', '
 // Flow direction comes from these when set, otherwise from the sign:
 // battery power > 0 = charging, grid power > 0 = import
 const STATUS_KEYS = ['battery_status', 'grid_status'];
+// Picture of each block: a built-in name (see BUILTIN_ICONS), "mdi:..." or an image URL
+const ICON_DEFAULTS = { pv_icon: 'solar', battery_icon: 'battery', grid_icon: 'grid', load_icon: 'home' };
+const BUILTIN_ICONS = { solar: 'pv', generator: 'generator', battery: 'battery', grid: 'grid', home: 'load' };
 
 const colorActive = '#00b7ee';
 const colorInactive = '#e0e5e9ff';
@@ -209,6 +212,17 @@ class LivoltekCard extends HTMLElement {
       return icon;
     }
 
+    // mdi icons and images are drawn inside the same ring as the built-in pictures
+    const blockIcon = (key, connected) => {
+      const spec = String(this._config[key] || ICON_DEFAULTS[key]).trim();
+      const builtin = BUILTIN_ICONS[spec.toLowerCase()];
+      if (builtin) return svgIcon(this._icons[builtin], connected);
+      const inner = /^[a-z]+:[\w-]+$/i.test(spec)
+        ? `<ha-icon icon="${escapeHtml(spec)}" style="color:${connected ? colorActive : colorInactive}"></ha-icon>`
+        : `<img src="${escapeHtml(spec)}" alt="" style="${connected ? '' : 'opacity:.45;'}">`;
+      return `<div class="li_icon-custom">${svgIcon(this._icons.ring, connected)}${inner}</div>`;
+    }
+
     const pvNum = Number(pv && !isNaN(Number(pv.state)) ? pv.state : 0);
     const batteryNum = Number(battery && !isNaN(Number(battery.state)) ? battery.state : 0);
     const socNum = Number(soc && !isNaN(Number(soc.state)) ? soc.state : 0);
@@ -245,7 +259,7 @@ class LivoltekCard extends HTMLElement {
           <div class="li_powerflow-left">
             ${this._renderBlock({
               type: 'pv',
-              icon: svgIcon(this._icons.pv, pvConnected),
+              icon: blockIcon('pv_icon', pvConnected),
               values: [{
                 style: 'position: absolute; left: calc(var(--icon-width) + 2px); top: calc((var(--icon-width) / 2) - 24px);',
                 spanStyle: 'color:#0382cc; white-space: nowrap;',
@@ -259,7 +273,7 @@ class LivoltekCard extends HTMLElement {
             })}
             ${this._renderBlock({
               type: 'battery',
-              icon: svgIcon(this._icons.battery, batteryConnected),
+              icon: blockIcon('battery_icon', batteryConnected),
               values: [
                 {
                   style: 'position: absolute; left: calc(var(--icon-width) + 2px); top: calc((var(--icon-width) / 2 - 28px));',
@@ -286,7 +300,7 @@ class LivoltekCard extends HTMLElement {
           <div class="li_powerflow-right">
             ${this._renderBlock({
               type: 'grid',
-              icon: svgIcon(this._icons.grid, gridConnected),
+              icon: blockIcon('grid_icon', gridConnected),
               values: [{
                 style: 'position: absolute; right: calc(var(--icon-width) + 2px); top: calc((var(--icon-width) / 2) - 24px);',
                 spanStyle: 'color:#0382cc; white-space: nowrap;',
@@ -301,7 +315,7 @@ class LivoltekCard extends HTMLElement {
             })}
             ${this._renderBlock({
               type: 'load',
-              icon: svgIcon(this._icons.load, loadConnected),
+              icon: blockIcon('load_icon', loadConnected),
               values: [{
                 style: 'position: absolute; right: calc(var(--icon-width) + 2px); top: calc((var(--icon-width) / 2));',
                 spanStyle: 'color:#0382cc; white-space: nowrap;',
@@ -343,6 +357,17 @@ class LivoltekCard extends HTMLElement {
         <defs><radialGradient id="A" cx="-70.159" cy="66.292" fx="-70.159" fy="66.292" r="30.571" gradientTransform="matrix(1.0590948,0,0,1.0590948,115.30516,-29.209956)" gradientUnits="userSpaceOnUse"><stop offset=".308" stop-color="#fff" stop-opacity="0"/><stop offset=".958" stop-color="#1ebcf0" stop-opacity=".267"/><stop offset=".995" stop-color="#fff" stop-opacity="0"/></radialGradient></defs>
         <circle cx="41" cy="41" r="32.378" fill="url(#A)"/>
         <path d="M41.001.055C18.442.055.13 18.402.13 41s18.313 40.945 40.871 40.945S81.87 63.598 81.87 41 63.56.055 41.001.055zm0 2.467c21.223 0 38.402 17.212 38.402 38.479s-17.18 38.477-38.402 38.477S2.597 62.267 2.597 41 19.778 2.521 41.001 2.521zm-.222 20.145a1 1 0 0 0-.395.188L22.8 36.605a1 1 0 0 0 1.232 1.576L41.001 24.91 57.97 38.106a1 1 0 0 0 1.402-.174 1 1 0 0 0-.176-1.404L41.613 22.852a1 1 0 0 0-.834-.186zm.232 5.482a1 1 0 0 0-.393.182l-13.3 10.144a1 1 0 0 0-.393.797v19.086a1 1 0 0 0 1 1h26.301a1 1 0 0 0 1-1V39.122a1 1 0 0 0-.391-.793l-13-9.994a1 1 0 0 0-.824-.186zm.211 2.236l12.004 9.229v17.744h-24.3V39.766zm2.361 7.631l-7.334 8.715 4.039.238-1.834 6.271 7.732-9.061-4.41.053z" fill="#00b7ee"/>
+      </svg>`,
+      generator: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 82 82" fill="none">
+        <defs><radialGradient id="A" cx="-70.159" cy="66.292" fx="-70.159" fy="66.292" r="30.571" gradientTransform="matrix(1.0590948,0,0,1.0590948,115.30516,-29.209956)" gradientUnits="userSpaceOnUse"><stop offset=".308" stop-color="#fff" stop-opacity="0"/><stop offset=".958" stop-color="#1ebcf0" stop-opacity=".267"/><stop offset=".995" stop-color="#fff" stop-opacity="0"/></radialGradient></defs>
+        <circle cx="41" cy="41" r="32.378" fill="url(#A)"/>
+        <path d="M41.001.055C18.442.055.13 18.402.13 41s18.313 40.945 40.871 40.945S81.87 63.598 81.87 41 63.56.055 41.001.055zm0 2.467c21.223 0 38.402 17.212 38.402 38.479s-17.18 38.477-38.402 38.477S2.597 62.267 2.597 41 19.778 2.521 41.001 2.521z" fill="#00b7ee"/>
+        <path fill-rule="evenodd" d="M21.5 31.5h37v20.5h-37zm2.25 2.25v16h32.5v-16zM29.5 26h21v5.5h-2.25v-3.25h-16.5v3.25H29.5zM24.5 52h5v4.5h-5zm27 0h5v4.5h-5zm7-15.5h4v2.25h-4zm-15.25-.75l-7.75 9h4.75l-1.75 6 7.75-9h-4.75z" fill="#00b7ee"/>
+      </svg>`,
+      ring: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 82 82" fill="none">
+        <defs><radialGradient id="A" cx="-70.159" cy="66.292" fx="-70.159" fy="66.292" r="30.571" gradientTransform="matrix(1.0590948,0,0,1.0590948,115.30516,-29.209956)" gradientUnits="userSpaceOnUse"><stop offset=".308" stop-color="#fff" stop-opacity="0"/><stop offset=".958" stop-color="#1ebcf0" stop-opacity=".267"/><stop offset=".995" stop-color="#fff" stop-opacity="0"/></radialGradient></defs>
+        <circle cx="41" cy="41" r="32.378" fill="url(#A)"/>
+        <path d="M41.001.055C18.442.055.13 18.402.13 41s18.313 40.945 40.871 40.945S81.87 63.598 81.87 41 63.56.055 41.001.055zm0 2.467c21.223 0 38.402 17.212 38.402 38.479s-17.18 38.477-38.402 38.477S2.597 62.267 2.597 41 19.778 2.521 41.001 2.521z" fill="#00b7ee"/>
       </svg>`,
       inverter: `<svg xmlns="http://www.w3.org/2000/svg" 
           viewBox="0 0 60 70" 
@@ -402,6 +427,28 @@ class LivoltekCard extends HTMLElement {
           width: var(--icon-width);
           height: var(--icon-width);
         }
+        .li_icon-custom {
+          position: relative;
+          width: 100%;
+          height: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .li_icon-custom > svg {
+          position: absolute;
+          inset: 0;
+        }
+        .li_icon-custom ha-icon {
+          --mdc-icon-size: calc(var(--icon-width) * 0.5);
+          display: flex;
+        }
+        .li_icon-custom img {
+          width: 56%;
+          height: 56%;
+          object-fit: contain;
+          border-radius: 50%;
+        }
         .li_powerflow-block.li_battery,
         .li_powerflow-block.li_load {
           margin-top: 8px;
@@ -450,7 +497,7 @@ if (!window.customCards.some(card => card.type === CARD_TAG)) {
 }
 
 console.groupCollapsed(
-  '%c LIVOLTEK-POWER-CARD %c v1.2.5 ',
+  '%c LIVOLTEK-POWER-CARD %c v1.3.0 ',
   'color: white; background: #488fc2; font-weight: 700;',
   'color: #488fc2; background: white; font-weight: 700;'
 );
