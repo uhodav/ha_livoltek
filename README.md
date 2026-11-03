@@ -219,6 +219,14 @@ pv_icon: generator # or mdi:engine, or /local/images/generator.png
 - A click on a block (picture or value) opens that sensor's details with its history: PV, battery power, battery SoC, grid, load.
 - `online_sensor`: a sensor that is `on` while the inverter is online. While it is off the flows are not animated, so values a cloud keeps after the inverter went offline do not look live.
 
+### Battery time
+Under the battery power the card shows how long until the battery is discharged or charged, e.g. `~2 h 10 min to 20 %`. Set `battery_capacity`: kWh as a number, or a sensor in kWh, Wh or Ah (Ah × `battery_voltage`, 51.2 V by default). Discharge is counted down to `battery_min_soc` (20 % by default), charge up to `battery_max_soc` (100 % by default). Not shown below 50 W, while offline or for more than 99 h.
+
+```yaml
+battery_capacity: sensor.inverter_battery_rated_capacity # 628 Ah → 32 kWh
+battery_min_soc: 20
+```
+
 See full details and usage: [frontend/README.md](custom_components/ha_livoltek/frontend/README.md)
 
 ---
@@ -431,6 +439,14 @@ pv_icon: generator # або mdi:engine, або /local/images/generator.png
 - `power_unit`: `W`, `kW` або `auto` (кВт від 1000 Вт) для потужності PV, акумулятора, мережі та споживання. Без нього — одиниці сенсора.
 - Клік по блоку (картинка або значення) відкриває деталі цього сенсора з історією: PV, потужність акумулятора, заряд акумулятора, мережа, споживання.
 - `online_sensor`: сенсор, який `on`, поки інвертор онлайн. Коли він вимкнений, потоки не анімуються, щоб значення, які хмара тримає після зникнення інвертора, не виглядали живими.
+
+### Час акумулятора
+Під потужністю акумулятора картка показує, скільки лишилось до розряду або заряду, напр. `~2 год 10 хв до 20 %`. Задайте `battery_capacity`: кВт·год числом або сенсор у кВт·год, Вт·год чи А·год (А·год × `battery_voltage`, за замовчуванням 51,2 В). Розряд рахується до `battery_min_soc` (за замовчуванням 20 %), заряд — до `battery_max_soc` (за замовчуванням 100 %). Не показується при потужності до 50 Вт, офлайн або понад 99 год.
+
+```yaml
+battery_capacity: sensor.inverter_battery_rated_capacity # 628 А·год → 32 кВт·год
+battery_min_soc: 20
+```
 
 ---
 

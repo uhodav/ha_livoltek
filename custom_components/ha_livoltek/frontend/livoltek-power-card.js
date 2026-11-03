@@ -12,6 +12,11 @@ const BUILTIN_ICONS = { solar: 'pv', generator: 'generator', battery: 'battery',
 const colorActive = '#00b7ee';
 const colorInactive = '#e0e5e9ff';
 
+const TIME_LABELS = {
+  en: { h: 'h', min: 'min', to: 'to' },
+  uk: { h: 'год', min: 'хв', to: 'до' },
+};
+
 const escapeHtml = (value) => String(value ?? '')
   .replace(/&/g, '&amp;')
   .replace(/</g, '&lt;')
@@ -110,7 +115,7 @@ class LivoltekCard extends HTMLElement {
       c.pv_power, c.grid_power, c.battery_power, c.battery_soc, c.load_power,
       c.active_sensor_pv, c.active_sensor_battery, c.active_sensor_grid, c.active_sensor_load,
       c.connected_sensor_pv, c.connected_sensor_battery, c.connected_sensor_grid, c.connected_sensor_load,
-      c.battery_status, c.grid_status, c.online_sensor,
+      c.battery_status, c.grid_status, c.online_sensor, c.battery_capacity,
     ];
   }
 
@@ -150,6 +155,37 @@ class LivoltekCard extends HTMLElement {
     const asKw = mode === 'kW' || (mode === 'auto' && Math.abs(watts) >= 1000);
     const value = asKw ? (watts / 1000).toFixed(2) : watts.toFixed(0);
     return escapeHtml(showUnit ? `${value} ${asKw ? 'kW' : 'W'}` : value);
+  }
+
+  // battery_capacity: kWh number or a sensor in kWh / Wh / Ah (Ah × battery_voltage, default 51.2 V)
+  _batteryCapacityWh() {
+    const cap = this._config.battery_capacity;
+    if (cap === undefined || cap === null || cap === '') return null;
+    if (Number.isFinite(Number(cap))) return Number(cap) * 1000;
+    const stateObj = this._stateObj(String(cap));
+    const value = Number(stateObj?.state);
+    if (!stateObj || stateObj.state === '' || !Number.isFinite(value) || value <= 0) return null;
+    const unit = stateObj.attributes.unit_of_measurement;
+    if (unit === 'kWh') return value * 1000;
+    if (unit === 'Wh') return value;
+    if (unit === 'Ah') return value * (Number(this._config.battery_voltage) || 51.2);
+    return null;
+  }
+
+  // "~2 h 10 min to 20 %": discharge down to battery_min_soc (20), charge up to battery_max_soc (100)
+  _batteryTime(socNum, powerW, discharging) {
+    const capacityWh = this._batteryCapacityWh();
+    if (!capacityWh || !Number.isFinite(socNum) || Math.abs(powerW) < 50) return '';
+    const target = discharging ? Number(this._config.battery_min_soc ?? 20) : Number(this._config.battery_max_soc ?? 100);
+    const left = discharging ? socNum - target : target - socNum;
+    if (!Number.isFinite(target) || left <= 0) return '';
+    const minutes = Math.round(left / 100 * capacityWh / Math.abs(powerW) * 60);
+    if (minutes > 99 * 60) return '';
+    const lang = String(this._hass?.locale?.language || this._hass?.language || 'en').startsWith('uk') ? 'uk' : 'en';
+    const t = TIME_LABELS[lang];
+    const h = Math.floor(minutes / 60);
+    const duration = h ? `${h} ${t.h} ${minutes % 60} ${t.min}` : `${minutes} ${t.min}`;
+    return escapeHtml(`~${duration} ${t.to} ${target} %`);
   }
 
   _metric(label, value, icon, accent = false) {
@@ -262,6 +298,10 @@ class LivoltekCard extends HTMLElement {
 
     // The inverter is offline: the cloud keeps the last values, so the flows are not animated
     const online = !this._config.online_sensor || this._isActiveState(this._stateObj(this._config.online_sensor));
+    const batteryUnit = battery?.attributes?.unit_of_measurement;
+    const batteryTime = online && battery && !['unknown', 'unavailable'].includes(battery.state)
+      ? this._batteryTime(Number(soc?.state), batteryNum * (batteryUnit === 'kW' ? 1000 : 1), batteryBack)
+      : '';
     const pvActive = online && this._isActiveState(pvActiveSensor);
     const batteryActive = online && this._isActiveState(batteryActiveSensor);
     const gridActive = online && this._isActiveState(gridActiveSensor);
@@ -309,6 +349,12 @@ class LivoltekCard extends HTMLElement {
                   style: 'position: absolute; left: calc(var(--icon-width) + 2px); top: calc((var(--icon-width) / 2));',
                   spanStyle: 'color:#0382cc; white-space: nowrap;',
                   text: batteryNum ? batteryVal : ''
+                },
+                {
+                  style: 'position: absolute; left: calc(var(--icon-width) + 2px); top: calc((var(--icon-width) / 2) + 20px);',
+                  spanStyle: 'color: var(--secondary-text-color, #8a8a8a); white-space: nowrap; font-size: 12px;',
+                  entity: this._config.battery_soc,
+                  text: batteryTime
                 }
               ],
               svgId: 'battery-inverter',
@@ -527,7 +573,7 @@ if (!window.customCards.some(card => card.type === CARD_TAG)) {
 }
 
 console.groupCollapsed(
-  '%c LIVOLTEK-POWER-CARD %c v1.4.0 ',
+  '%c LIVOLTEK-POWER-CARD %c v1.5.0 ',
   'color: white; background: #488fc2; font-weight: 700;',
   'color: #488fc2; background: white; font-weight: 700;'
 );

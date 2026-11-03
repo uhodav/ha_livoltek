@@ -22,6 +22,10 @@ const LABELS = {
     power_unit_sensor: "As the sensor",
     power_unit_auto: "Auto (kW from 1000 W)",
     online_label: "Online sensor (no flow animation while offline)",
+    capacity_label: "Capacity for time estimate",
+    capacity_hint: "kWh, or a sensor in kWh / Wh / Ah",
+    min_soc_label: "Discharge to, %",
+    max_soc_label: "Charge to, %",
   },
   uk: {
     title_label: "Заголовок",
@@ -45,6 +49,10 @@ const LABELS = {
     power_unit_sensor: "Як у сенсора",
     power_unit_auto: "Авто (кВт від 1000 Вт)",
     online_label: "Сенсор «онлайн» (без анімації потоків, коли офлайн)",
+    capacity_label: "Ємність для оцінки часу",
+    capacity_hint: "кВт·год або сенсор у кВт·год / Вт·год / А·год",
+    min_soc_label: "Розряд до, %",
+    max_soc_label: "Заряд до, %",
   },
 };
 
@@ -56,6 +64,7 @@ const OVERRIDE_KEYS = [
 
 const ICON_KEYS = ['pv_icon', 'battery_icon', 'grid_icon', 'load_icon'];
 const POWER_UNITS = ['', 'W', 'kW', 'auto'];
+const BATTERY_TIME_KEYS = ['battery_capacity', 'battery_min_soc', 'battery_max_soc'];
 
 const escapeHtml = (value) => String(value ?? '')
   .replace(/&/g, '&amp;')
@@ -202,9 +211,9 @@ class LivoltekPowerCardEditor extends HTMLElement {
       const toggle = this.shadowRoot.getElementById(`show_units_${key}`);
       if (toggle) toggle.checked = this._config[`show_units_${key}`] !== false;
     });
-    ICON_KEYS.forEach(key => {
+    [...ICON_KEYS, ...BATTERY_TIME_KEYS].forEach(key => {
       const input = this.shadowRoot.getElementById(key);
-      if (input && input.value !== (this._config[key] || '')) input.value = this._config[key] || '';
+      if (input && input.value !== String(this._config[key] ?? '')) input.value = String(this._config[key] ?? '');
     });
   }
 
@@ -350,6 +359,18 @@ class LivoltekPowerCardEditor extends HTMLElement {
               <ha-entity-picker id="connected_sensor_battery" allow-custom-entity></ha-entity-picker>
             </div>
             <div class="sensor-row">
+              <span style="min-width:90px">${this._t('capacity_label')}:</span>
+              <input type="text" id="battery_capacity" value="${escapeHtml(this._config.battery_capacity)}" placeholder="${this._t('capacity_hint')}" />
+            </div>
+            <div class="sensor-row">
+              <span style="min-width:90px">${this._t('min_soc_label')}:</span>
+              <input type="number" min="0" max="100" id="battery_min_soc" value="${escapeHtml(this._config.battery_min_soc)}" placeholder="20" />
+            </div>
+            <div class="sensor-row">
+              <span style="min-width:90px">${this._t('max_soc_label')}:</span>
+              <input type="number" min="0" max="100" id="battery_max_soc" value="${escapeHtml(this._config.battery_max_soc)}" placeholder="100" />
+            </div>
+            <div class="sensor-row">
               <span style="min-width:90px">${this._t('icon_label')}:</span>
               <input type="text" id="battery_icon" value="${escapeHtml(this._config.battery_icon)}" placeholder="${this._t('icon_hint')}" />
             </div>
@@ -458,6 +479,11 @@ class LivoltekPowerCardEditor extends HTMLElement {
         const value = this.shadowRoot.getElementById(key)?.value.trim();
         if (value) this._config[key] = value;
         else delete this._config[key];
+      });
+      BATTERY_TIME_KEYS.forEach(key => {
+        const value = this.shadowRoot.getElementById(key)?.value.trim();
+        if (!value) delete this._config[key];
+        else this._config[key] = Number.isFinite(Number(value)) ? Number(value) : value;
       });
       this.configChanged(this._config);
     };
